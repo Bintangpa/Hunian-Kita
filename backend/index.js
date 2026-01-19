@@ -70,7 +70,7 @@ app.get('/api/rumah', (req, res) => {
     SELECT 
       p.id,
       p.title as nama,
-      COALESCE(LOWER(c.name), 'kost') as type,
+      LOWER(p.type) as type,  
       p.address as alamat,
       COALESCE(ct.name, 'Jakarta') as city,
       TRIM(SUBSTRING_INDEX(p.address, ',', 1)) as district,
@@ -157,7 +157,7 @@ app.get('/api/rumah/:id', (req, res) => {
     SELECT 
       p.id,
       p.title as nama,
-      COALESCE(LOWER(c.name), 'kost') as type,
+      LOWER(p.type) as type,
       p.address as alamat,
       COALESCE(ct.name, 'Jakarta') as city,
       TRIM(SUBSTRING_INDEX(p.address, ',', 1)) as district,
@@ -386,30 +386,31 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
       const facilitiesJson = JSON.stringify(facilitiesArray);
 
       const sql = `
-        INSERT INTO properties (
-          user_id, title, category_id, city_id, address, price, price_unit,
-          description, facilities, image, owner_name, owner_whatsapp, 
-          bedrooms, bathrooms, area, status, views, whatsapp_clicks, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
-      `;
+  INSERT INTO properties (
+    user_id, title, type, category_id, city_id, address, price, price_unit,
+    description, facilities, image, owner_name, owner_whatsapp, 
+    bedrooms, bathrooms, area, status, views, whatsapp_clicks, created_at
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
+`;
 
-      const values = [
-        user_id,
-        title,
-        finalCategoryId,
-        finalCityId,
-        address,
-        parseFloat(price),
-        price_unit || 'bulan',
-        description || '',
-        facilitiesJson,
-        allImagesJson,
-        owner_name,
-        owner_whatsapp,
-        parseInt(bedrooms) || 1,
-        parseInt(bathrooms) || 1,
-        parseFloat(area) || 0
-      ];
+const values = [
+  user_id,
+  title,
+  type.toLowerCase(),  // ← TAMBAHKAN INI! (villa, kost, guesthouse)
+  finalCategoryId,
+  finalCityId,
+  address,
+  parseFloat(price),
+  price_unit || 'bulan',
+  description || '',
+  facilitiesJson,
+  allImagesJson,
+  owner_name,
+  owner_whatsapp,
+  parseInt(bedrooms) || 1,
+  parseInt(bathrooms) || 1,
+  parseFloat(area) || 0
+];
 
       db.query(sql, values, (err, result) => {
         if (err) {
@@ -500,7 +501,7 @@ app.get('/api/properties/mitra/:userId', (req, res) => {
     SELECT 
       p.id,
       p.title as nama,
-      COALESCE(LOWER(c.name), 'kost') as type,
+      LOWER(p.type) as type,
       p.address as alamat,
       COALESCE(ct.name, 'Jakarta') as city,
       TRIM(SUBSTRING_INDEX(p.address, ',', 1)) as district,
@@ -605,6 +606,267 @@ app.delete('/api/properties/:id', (req, res) => {
     });
   });
 });
+
+
+
+// ========== API UPDATE PROPERTY ==========
+app.put('/api/properties/:id', upload.array('images', 5), (req, res) => {
+  const { id } = req.params;
+  
+  console.log('🔄 Update property request for ID:', id);
+  console.log('Body:', req.body);
+  console.log('Files:', req.files?.length || 0, 'new images');
+
+  try {
+    const {
+      title,
+      type,
+      city,
+      address,
+      price,
+      price_unit,
+      description,
+      facilities,
+      owner_name,
+      owner_whatsapp,
+      bedrooms,
+      bathrooms,
+      area,
+      category_id
+    } = req.body;
+
+    // Validasi
+    if (!title || !type || !address || !price || !owner_name || !owner_whatsapp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Field wajib tidak lengkap'
+      });
+    }
+
+    // Process uploaded images (kalau ada gambar baru)
+    let imagePaths = [];
+    if (req.files && req.files.length > 0) {
+      imagePaths = req.files.map(file => `/uploads/${file.filename}`);
+    }
+
+    // Parse facilities
+    let facilitiesArray = [];
+    if (facilities) {
+      try {
+        facilitiesArray = typeof facilities === 'string' 
+          ? JSON.parse(facilities) 
+          : facilities;
+      } catch (e) {
+        facilitiesArray = [];
+      }
+    }
+
+    // Determine category_id
+    let finalCategoryId = category_id;
+    if (!finalCategoryId) {
+      const typeMap = { 'kost': 1, 'guesthouse': 2, 'villa': 3 };
+      finalCategoryId = typeMap[type.toLowerCase()] || 1;
+    }
+
+    const facilitiesJson = JSON.stringify(facilitiesArray);
+
+    // Build SQL UPDATE
+    let sql;
+    let values;
+
+    if (imagePaths.length > 0) {
+      // Ada gambar baru, update semua termasuk gambar
+      const allImagesJson = JSON.stringify(imagePaths);
+      sql = `
+        UPDATE properties 
+        SET title = ?, type = ?, category_id = ?, address = ?, price = ?, price_unit = ?,
+            description = ?, facilities = ?, image = ?, owner_name = ?, owner_whatsapp = ?,
+            bedrooms = ?, bathrooms = ?, area = ?
+        WHERE id = ?
+      `;
+      values = [
+        title,
+        type.toLowerCase(),
+        finalCategoryId,
+        address,
+        parseFloat(price),
+        price_unit || 'bulan',
+        description || '',
+        facilitiesJson,
+        allImagesJson,
+        owner_name,
+        owner_whatsapp,
+        parseInt(bedrooms) || 1,
+        parseInt(bathrooms) || 1,
+        parseFloat(area) || 0,
+        id
+      ];
+    } else {
+      // Tidak ada gambar baru, update tanpa gambar
+      sql = `
+        UPDATE properties 
+        SET title = ?, type = ?, category_id = ?, address = ?, price = ?, price_unit = ?,
+            description = ?, facilities = ?, owner_name = ?, owner_whatsapp = ?,
+            bedrooms = ?, bathrooms = ?, area = ?
+        WHERE id = ?
+      `;
+      values = [
+        title,
+        type.toLowerCase(),
+        finalCategoryId,
+        address,
+        parseFloat(price),
+        price_unit || 'bulan',
+        description || '',
+        facilitiesJson,
+        owner_name,
+        owner_whatsapp,
+        parseInt(bedrooms) || 1,
+        parseInt(bathrooms) || 1,
+        parseFloat(area) || 0,
+        id
+      ];
+    }
+
+    db.query(sql, values, (err, result) => {
+      if (err) {
+        console.error('❌ Update error:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Gagal mengupdate properti',
+          error: err.message
+        });
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Properti tidak ditemukan'
+        });
+      }
+
+      console.log('✅ Property updated! ID:', id);
+      res.json({
+        success: true,
+        message: 'Properti berhasil diupdate',
+        propertyId: id
+      });
+    });
+  } catch (error) {
+    console.error('❌ Update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan',
+      error: error.message
+    });
+  }
+});
+
+
+// ========== API REGISTER ==========
+app.post('/api/register', async (req, res) => {
+  const { name, email, phone, whatsapp, password } = req.body;
+  
+  console.log('📝 Register attempt:', email);
+  
+  // Validasi input
+  if (!name || !email || !phone || !password) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Semua field wajib diisi' 
+    });
+  }
+  
+  // Validasi email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Format email tidak valid' 
+    });
+  }
+  
+  // Validasi password minimal 6 karakter
+  if (password.length < 6) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Password minimal 6 karakter' 
+    });
+  }
+  
+  try {
+    // Cek apakah email sudah terdaftar
+    const checkEmailSql = 'SELECT id FROM users WHERE email = ?';
+    db.query(checkEmailSql, [email], async (err, results) => {
+      if (err) {
+        console.error('❌ Database error:', err);
+        return res.status(500).json({ 
+          success: false, 
+          error: 'Terjadi kesalahan server' 
+        });
+      }
+      
+      if (results.length > 0) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Email sudah terdaftar' 
+        });
+      }
+      
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+      
+
+
+      // ❌ Cegah register dengan email admin
+          if (email.toLowerCase().includes('admin')) {
+             return res.status(403).json({ 
+              success: false, 
+               error: 'Email tidak valid untuk registrasi' 
+                 });
+      }
+
+      // Insert user baru dengan role 'mitra'
+      const insertSql = `
+        INSERT INTO users (name, email, phone, whatsapp, password, role, created_at) 
+        VALUES (?, ?, ?, ?, ?, 'mitra', NOW())
+      `;
+      
+      const values = [
+        name,
+        email,
+        phone,
+        whatsapp || phone, // Jika whatsapp kosong, gunakan phone
+        hashedPassword
+      ];
+      
+      db.query(insertSql, values, (err, result) => {
+        if (err) {
+          console.error('❌ Insert error:', err);
+          return res.status(500).json({ 
+            success: false, 
+            error: 'Gagal menyimpan data' 
+          });
+        }
+        
+        console.log('✅ User registered successfully:', email, '(role: mitra)');
+        
+        res.status(201).json({
+          success: true,
+          message: 'Registrasi berhasil! Silakan login.',
+          userId: result.insertId
+        });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Register error:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Terjadi kesalahan server' 
+    });
+  }
+});
+
 
 // Jalankan server
 const PORT = 3000;

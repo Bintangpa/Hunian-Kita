@@ -304,14 +304,31 @@ export default function MitraDashboard() {
     return parseInt(value).toLocaleString('id-ID');
   };
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length > 0) {
-      setFormData(prev => ({ ...prev, images: files }));
-      const previews = files.map(file => URL.createObjectURL(file));
-      setImagePreviews(previews);
-    }
-  };
+  
+const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = Array.from(e.target.files || []);
+  
+  if (files.length === 0) return;
+  
+  // Cek total size
+  const totalSize = files.reduce((sum, file) => sum + file.size, 0);
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  
+  if (totalSize > maxSize) {
+    const totalMB = (totalSize / (1024 * 1024)).toFixed(2);
+    toast({
+      title: 'Error',
+      description: `Total ukuran foto ${totalMB}MB melebihi batas 5MB`,
+      variant: 'destructive',
+    });
+    e.target.value = ''; // Reset input
+    return;
+  }
+  
+  setFormData(prev => ({ ...prev, images: files }));
+  const previews = files.map(file => URL.createObjectURL(file));
+  setImagePreviews(previews);
+};
 
   const removeImage = (index: number) => {
     setFormData(prev => {
@@ -326,14 +343,40 @@ export default function MitraDashboard() {
     
     if (!user) return;
 
-    if (!formData.title || !formData.type || !formData.city || !formData.address || !formData.price || !formData.owner_name || !formData.owner_whatsapp) {
-      toast({
-        title: 'Error',
-        description: 'Mohon lengkapi semua field yang wajib diisi',
-        variant: 'destructive',
-      });
-      return;
-    }
+    
+// Validasi field wajib
+if (!formData.title || !formData.type || !formData.city || !formData.address || !formData.price || !formData.owner_name || !formData.owner_whatsapp) {
+  toast({
+    title: 'Error',
+    description: 'Mohon lengkapi semua field yang wajib diisi',
+    variant: 'destructive',
+  });
+  return;
+}
+
+// Validasi foto wajib
+if (formData.images.length === 0) {
+  toast({
+    title: 'Error',
+    description: 'Minimal 1 foto properti harus diupload',
+    variant: 'destructive',
+  });
+  return;
+}
+
+// Validasi total size foto max 5MB
+const totalSize = formData.images.reduce((sum, file) => sum + file.size, 0);
+const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+if (totalSize > maxSize) {
+  const totalMB = (totalSize / (1024 * 1024)).toFixed(2);
+  toast({
+    title: 'Error',
+    description: `Total ukuran foto ${totalMB}MB melebihi batas 5MB`,
+    variant: 'destructive',
+  });
+  return;
+}
+
 
     setIsSubmitting(true);
 
@@ -612,20 +655,17 @@ export default function MitraDashboard() {
                         <span className="text-sm font-normal text-muted-foreground">/{property.priceUnit}</span>
                       </p>
                       <div className="flex gap-2 pt-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="flex-1"
-                          onClick={() => {
-                            toast({
-                              title: 'Info',
-                              description: 'Fitur edit akan segera tersedia',
-                            });
-                          }}
-                        >
-                          <Edit className="w-4 h-4 mr-2" />
-                          Edit
-                        </Button>
+                        
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1"
+                        onClick={() => navigate(`/mitra/property/edit/${property.id}`)}
+>
+                        <Edit className="w-4 h-4 mr-2" />
+                           Edit
+                      </Button>
+
                         <Button
                           variant="destructive"
                           size="sm"

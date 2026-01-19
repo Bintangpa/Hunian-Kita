@@ -15,6 +15,8 @@ import PropertyDetail from './pages/PropertyDetail';
 import Kost from "./pages/Kost";
 import GuestHouse from "./pages/GuestHouse";
 import Villa from "./pages/Villa";
+import EditProperty from './pages/mitra/EditProperty';
+
 
 const queryClient = new QueryClient();
 
@@ -48,6 +50,9 @@ const App = () => (
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/mitra/dashboard" element={<MitraDashboard />} />
           
+          
+          <Route path="/mitra/property/edit/:id" element={<EditProperty />} />
+
           {/* 404 Page */}
           <Route path="*" element={<NotFound />} />
         </Routes>
