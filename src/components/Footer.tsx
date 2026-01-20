@@ -1,7 +1,50 @@
+import { useEffect, useState } from 'react';
 import { Building2, Instagram, Facebook, Twitter } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+interface FooterSettings {
+  footer_brand_name: string;
+  footer_description: string;
+  footer_instagram: string;
+  footer_facebook: string;
+  footer_twitter: string;
+  footer_cities: string;
+  footer_copyright: string;
+}
+
 export function Footer() {
+  const [settings, setSettings] = useState<FooterSettings>({
+    footer_brand_name: 'HunianKita',
+    footer_description: 'Platform pencarian hunian terlengkap di Indonesia.',
+    footer_instagram: '#',
+    footer_facebook: '#',
+    footer_twitter: '#',
+    footer_cities: 'Jakarta,Bandung,Bali,Yogyakarta',
+    footer_copyright: '© 2026 HunianKita. Hak cipta dilindungi.'
+  });
+
+  useEffect(() => {
+    loadFooterSettings();
+  }, []);
+
+  const loadFooterSettings = async () => {
+    try {
+      const response = await fetch('http://localhost:3000/api/settings/footer');
+      if (response.ok) {
+        const data = await response.json();
+        setSettings(data);
+      }
+    } catch (error) {
+      console.error('Error loading footer settings:', error);
+      // Tetap gunakan default values jika gagal
+    }
+  };
+
+  // Parse cities dari string ke array
+  const cities = settings.footer_cities 
+    ? settings.footer_cities.split(',').map(city => city.trim()) 
+    : [];
+
   return (
     <footer className="bg-foreground text-background py-12 pb-24 md:pb-12">
       <div className="container mx-auto px-4">
@@ -13,22 +56,46 @@ export function Footer() {
                 <Building2 className="w-6 h-6 text-primary-foreground" />
               </div>
               <span className="font-bold text-xl">
-                Hunian<span className="text-primary">Kita</span>
+                {settings.footer_brand_name.split(/(?=[A-Z][a-z])/)[0]}
+                <span className="text-primary">
+                  {settings.footer_brand_name.split(/(?=[A-Z][a-z])/)[1] || 'Kita'}
+                </span>
               </span>
             </Link>
             <p className="text-background/70 text-sm mb-4">
-              Platform pencarian hunian terlengkap di Indonesia. Temukan kost, guest house, dan villa impianmu.
+              {settings.footer_description}
             </p>
             <div className="flex gap-3">
-              <a href="#" className="w-9 h-9 bg-background/10 rounded-full flex items-center justify-center hover:bg-background/20 transition-colors">
-                <Instagram className="w-4 h-4" />
-              </a>
-              <a href="#" className="w-9 h-9 bg-background/10 rounded-full flex items-center justify-center hover:bg-background/20 transition-colors">
-                <Facebook className="w-4 h-4" />
-              </a>
-              <a href="#" className="w-9 h-9 bg-background/10 rounded-full flex items-center justify-center hover:bg-background/20 transition-colors">
-                <Twitter className="w-4 h-4" />
-              </a>
+              {settings.footer_instagram && settings.footer_instagram !== '#' && (
+                <a 
+                  href={settings.footer_instagram} 
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 bg-background/10 rounded-full flex items-center justify-center hover:bg-background/20 transition-colors"
+                >
+                  <Instagram className="w-4 h-4" />
+                </a>
+              )}
+              {settings.footer_facebook && settings.footer_facebook !== '#' && (
+                <a 
+                  href={settings.footer_facebook}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 bg-background/10 rounded-full flex items-center justify-center hover:bg-background/20 transition-colors"
+                >
+                  <Facebook className="w-4 h-4" />
+                </a>
+              )}
+              {settings.footer_twitter && settings.footer_twitter !== '#' && (
+                <a 
+                  href={settings.footer_twitter}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-9 h-9 bg-background/10 rounded-full flex items-center justify-center hover:bg-background/20 transition-colors"
+                >
+                  <Twitter className="w-4 h-4" />
+                </a>
+              )}
             </div>
           </div>
 
@@ -46,10 +113,16 @@ export function Footer() {
           <div>
             <h4 className="font-semibold mb-4">Kota Populer</h4>
             <ul className="space-y-2 text-sm text-background/70">
-              <li><Link to="/jakarta" className="hover:text-background transition-colors">Jakarta</Link></li>
-              <li><Link to="/bandung" className="hover:text-background transition-colors">Bandung</Link></li>
-              <li><Link to="/bali" className="hover:text-background transition-colors">Bali</Link></li>
-              <li><Link to="/yogyakarta" className="hover:text-background transition-colors">Yogyakarta</Link></li>
+              {cities.slice(0, 4).map((city, index) => (
+                <li key={index}>
+                  <Link 
+                    to={`/${city.toLowerCase()}`} 
+                    className="hover:text-background transition-colors"
+                  >
+                    {city}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -66,10 +139,9 @@ export function Footer() {
         </div>
 
         <div className="mt-8 pt-8 border-t border-background/10 text-center text-sm text-background/50">
-          <p>© 2026 HunianKita. Hak cipta dilindungi.</p>
+          <p>{settings.footer_copyright}</p>
         </div>
       </div>
     </footer>
   );
 }
-

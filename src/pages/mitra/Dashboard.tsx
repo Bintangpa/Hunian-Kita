@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+
 import {
   Select,
   SelectContent,
@@ -33,7 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, ChevronsUpDown } from 'lucide-react';
+import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, ChevronsUpDown,Coins } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -102,6 +103,9 @@ export default function MitraDashboard() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [openCityCombo, setOpenCityCombo] = useState(false);
+  const [userTokens, setUserTokens] = useState<number>(0);
+  const [loadingTokens, setLoadingTokens] = useState(false);
+
 
   const [formData, setFormData] = useState({
     title: '',
@@ -122,24 +126,32 @@ export default function MitraDashboard() {
   });
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    
-    if (!userData) {
-      navigate('/login');
-      return;
-    }
-    
-    const parsedUser = JSON.parse(userData);
-    
-    if (parsedUser.role !== 'mitra') {
-      navigate('/');
-      return;
-    }
-    
-    setUser(parsedUser);
-    fetchProperties(parsedUser.id);
-    fetchIndonesiaCities();
-  }, [navigate]);
+  const userData = localStorage.getItem('user');
+  
+  if (!userData) {
+    navigate('/login');
+    return;
+  }
+  
+  const parsedUser = JSON.parse(userData);
+  
+  if (parsedUser.role !== 'mitra') {
+    navigate('/');
+    return;
+  }
+  
+  setUser(parsedUser);
+  
+  // ✅ TAMBAH BAGIAN INI
+  if (parsedUser.tokens !== undefined) {
+    setUserTokens(parsedUser.tokens);
+  } else {
+    fetchUserTokens(parsedUser.id);
+  }
+  
+  fetchProperties(parsedUser.id);
+  fetchIndonesiaCities();
+}, [navigate]);
 
   // ✅ Fetch kota dari API Indonesia
   const fetchIndonesiaCities = async () => {
@@ -240,6 +252,24 @@ export default function MitraDashboard() {
       console.error('Error fetching local cities:', error);
     }
   };
+
+  const fetchUserTokens = async (userId: number) => {
+  try {
+    setLoadingTokens(true);
+    const response = await fetch(`http://localhost:3000/api/users/${userId}/tokens`);
+    if (response.ok) {
+      const data = await response.json();
+      setUserTokens(data.tokens);
+      console.log('✅ User tokens:', data.tokens);
+    }
+  } catch (error) {
+    console.error('Error fetching tokens:', error);
+  } finally {
+    setLoadingTokens(false);
+  }
+};
+
+
 
   const fetchProperties = async (userId: number) => {
     try {
@@ -343,6 +373,17 @@ const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     
     if (!user) return;
 
+
+// ✅ TAMBAH VALIDASI TOKEN DI SINI (SEBELUM validasi field)
+  if (userTokens < 15) {
+    toast({
+      title: 'Token Tidak Cukup! 🪙',
+      description: `Anda hanya memiliki ${userTokens} token. Dibutuhkan 15 token untuk upload properti.`,
+      variant: 'destructive',
+    });
+    return;
+  }
+
     
 // Validasi field wajib
 if (!formData.title || !formData.type || !formData.city || !formData.address || !formData.price || !formData.owner_name || !formData.owner_whatsapp) {
@@ -421,13 +462,16 @@ if (totalSize > maxSize) {
       const result = await response.json();
 
       if (response.ok && result.success) {
-        toast({
-          title: 'Berhasil! 🎉',
-          description: 'Properti berhasil diupload dan sudah muncul di halaman publik',
-        });
-        setIsDialogOpen(false);
-        resetForm();
-        fetchProperties(user.id);
+    const newTokens = userTokens - 15;
+    setUserTokens(newTokens); // ✅ Update tokens di UI
+    
+    toast({
+      title: 'Berhasil! 🎉',
+      description: `Properti berhasil diupload! Token Anda: ${newTokens} (dikurangi 15)`,
+    });
+    setIsDialogOpen(false);
+    resetForm();
+    fetchProperties(user.id);
       } else {
         toast({
           title: 'Error',
@@ -568,27 +612,65 @@ if (totalSize > maxSize) {
           <p className="text-muted-foreground mt-1">Kelola properti Anda</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Properti Saya</CardTitle>
-              <Home className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{totalProperties}</div>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Properti Saya</CardTitle>
+                    <Home className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalProperties}</div>
               <p className="text-xs text-muted-foreground">
                 {activeProperties} aktif, {pendingProperties} pending
               </p>
-            </CardContent>
+          </CardContent>
           </Card>
-        </div>
 
+  {/* ✅ TAMBAH CARD TOKEN INI */}
+  <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10">
+    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardTitle className="text-sm font-medium">Token Saya</CardTitle>
+      <Coins className="h-4 w-4 text-primary" />
+    </CardHeader>
+    <CardContent>
+      {loadingTokens ? (
+        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+      ) : (
+        <>
+          <div className="text-2xl font-bold text-primary">{userTokens}</div>
+          <p className="text-xs text-muted-foreground">
+            15 token per upload properti
+          </p>
+        </>
+      )}
+    </CardContent>
+  </Card>
+</div>
+
+        
         <div className="mb-6">
-          <Button size="lg" className="gap-2" onClick={() => setIsDialogOpen(true)}>
-            <Plus className="w-5 h-5" />
-            Tambah Properti Baru
-          </Button>
-        </div>
+  <Button 
+    size="lg" 
+    className="gap-2" 
+    onClick={() => setIsDialogOpen(true)}
+    disabled={userTokens < 15}
+  >
+    <Plus className="w-5 h-5" />
+    Tambah Properti Baru
+    {userTokens < 15 && (
+      <span className="ml-2 text-xs">(Token tidak cukup)</span>
+    )}
+  </Button>
+  
+  {/* ✅ TAMBAH WARNING jika token < 15 */}
+  {userTokens < 15 && (
+    <p className="text-sm text-destructive mt-2 flex items-center gap-1">
+      <Coins className="w-4 h-4" />
+      Anda memiliki {userTokens} token. Butuh 15 token untuk upload properti.
+    </p>
+  )}
+</div>
+
 
         <div className="bg-card rounded-xl border border-border p-6">
           <h2 className="text-lg font-semibold mb-4">Properti Saya</h2>

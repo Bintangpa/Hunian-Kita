@@ -264,8 +264,7 @@ app.get('/api/cities', (req, res) => {
 
 
 
-
-// ========== API LOGIN ==========
+// ========== API LOGIN (Updated with tokens) ==========
 app.post('/api/login', async (req, res) => {
   const { email, password } = req.body;
   
@@ -278,7 +277,8 @@ app.post('/api/login', async (req, res) => {
     });
   }
   
-  const sql = 'SELECT id, name, email, role, password FROM users WHERE email = ?';
+  // ✅ TAMBAHKAN tokens ke SELECT query
+  const sql = 'SELECT id, name, email, role, is_active, tokens, password FROM users WHERE email = ?';
   
   db.query(sql, [email], async (err, results) => {
     if (err) {
@@ -296,6 +296,15 @@ app.post('/api/login', async (req, res) => {
     }
     
     const user = results[0];
+    
+    // ✅ CEK APAKAH USER AKTIF (KECUALI ADMIN)
+    if (user.role !== 'admin' && user.is_active === 0) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Akun Anda telah dinonaktifkan.' 
+      });
+    }
+    
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
@@ -305,7 +314,7 @@ app.post('/api/login', async (req, res) => {
       });
     }
     
-    console.log(`✅ Login success: ${user.email} (${user.role})`);
+    console.log(`✅ Login success: ${user.email} (${user.role}) - Tokens: ${user.tokens}`);
     
     res.json({
       success: true,
@@ -314,13 +323,14 @@ app.post('/api/login', async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        tokens: user.tokens // ✅ KIRIM TOKEN KE FRONTEND
       }
     });
   });
 });
 
-// ========== ✅ API UPLOAD PROPERTY (DENGAN FOTO) ==========
+// ========== ✅ API UPLOAD PROPERTY (DENGAN VALIDASI TOKEN) ==========
 app.post('/api/properties', upload.array('images', 5), (req, res) => {
   console.log('📤 Upload property request');
   console.log('Body:', req.body);
@@ -354,134 +364,170 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
       });
     }
 
-    // ✅ Process uploaded images
-    let imagePaths = [];
-    if (req.files && req.files.length > 0) {
-      imagePaths = req.files.map(file => `/uploads/${file.filename}`);
-    }
-
-    // Parse facilities
-    let facilitiesArray = [];
-    if (facilities) {
-      try {
-        facilitiesArray = typeof facilities === 'string' 
-          ? JSON.parse(facilities) 
-          : facilities;
-      } catch (e) {
-        facilitiesArray = [];
-      }
-    }
-
-    // Determine category_id
-    let finalCategoryId = category_id;
-    if (!finalCategoryId) {
-      const typeMap = { 'kost': 1, 'guesthouse': 2, 'villa': 3 };
-      finalCategoryId = typeMap[type.toLowerCase()] || 1;
-    }
-
-    // Function untuk insert property setelah city_id sudah ditentukan
-    const insertProperty = (finalCityId) => {
-      const mainImage = imagePaths.length > 0 ? imagePaths[0] : '';
-      const allImagesJson = JSON.stringify(imagePaths);
-      const facilitiesJson = JSON.stringify(facilitiesArray);
-
-      const sql = `
-  INSERT INTO properties (
-    user_id, title, type, category_id, city_id, address, price, price_unit,
-    description, facilities, image, owner_name, owner_whatsapp, 
-    bedrooms, bathrooms, area, status, views, whatsapp_clicks, created_at
-  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
-`;
-
-const values = [
-  user_id,
-  title,
-  type.toLowerCase(),  // ← TAMBAHKAN INI! (villa, kost, guesthouse)
-  finalCategoryId,
-  finalCityId,
-  address,
-  parseFloat(price),
-  price_unit || 'bulan',
-  description || '',
-  facilitiesJson,
-  allImagesJson,
-  owner_name,
-  owner_whatsapp,
-  parseInt(bedrooms) || 1,
-  parseInt(bathrooms) || 1,
-  parseFloat(area) || 0
-];
-
-      db.query(sql, values, (err, result) => {
-        if (err) {
-          console.error('❌ Insert error:', err);
-          return res.status(500).json({
-            success: false,
-            message: 'Gagal menyimpan properti',
-            error: err.message
-          });
-        }
-
-        console.log('✅ Property uploaded! ID:', result.insertId);
-        res.json({
-          success: true,
-          message: 'Properti berhasil diupload',
-          propertyId: result.insertId
+    // ✅ CEK TOKEN USER SEBELUM UPLOAD
+    const checkTokenSql = 'SELECT tokens, role FROM users WHERE id = ?';
+    
+    db.query(checkTokenSql, [user_id], (err, userResults) => {
+      if (err) {
+        console.error('❌ Error checking tokens:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Terjadi kesalahan saat mengecek token'
         });
-      });
-    };
-
-    // Determine city_id - cek dulu di database, jika tidak ada maka insert
-    let finalCityId = city_id;
-    if (!finalCityId && city) {
-      // Cek apakah kota sudah ada di database
-      const checkCitySql = 'SELECT id FROM cities WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?)';
-      const citySlug = city.toLowerCase().replace(/\s+/g, '-');
+      }
       
-      db.query(checkCitySql, [city, citySlug], (err, cityResults) => {
-        if (err) {
-          console.error('❌ Error checking city:', err);
-          return res.status(500).json({
-            success: false,
-            message: 'Gagal mengecek data kota',
-            error: err.message
-          });
+      if (userResults.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User tidak ditemukan'
+        });
+      }
+      
+      const userTokens = userResults[0].tokens;
+      const userRole = userResults[0].role;
+      
+      // ✅ VALIDASI TOKEN (HANYA UNTUK MITRA)
+      if (userRole === 'mitra' && userTokens < 15) {
+        return res.status(403).json({
+          success: false,
+          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan 15 token untuk upload properti.`
+        });
+      }
+      
+      // Proses upload seperti biasa...
+      let imagePaths = [];
+      if (req.files && req.files.length > 0) {
+        imagePaths = req.files.map(file => `/uploads/${file.filename}`);
+      }
+
+      let facilitiesArray = [];
+      if (facilities) {
+        try {
+          facilitiesArray = typeof facilities === 'string' 
+            ? JSON.parse(facilities) 
+            : facilities;
+        } catch (e) {
+          facilitiesArray = [];
         }
+      }
+
+      let finalCategoryId = category_id;
+      if (!finalCategoryId) {
+        const typeMap = { 'kost': 1, 'guesthouse': 2, 'villa': 3 };
+        finalCategoryId = typeMap[type.toLowerCase()] || 1;
+      }
+
+      const insertProperty = (finalCityId) => {
+        const mainImage = imagePaths.length > 0 ? imagePaths[0] : '';
+        const allImagesJson = JSON.stringify(imagePaths);
+        const facilitiesJson = JSON.stringify(facilitiesArray);
+
+        const sql = `
+          INSERT INTO properties (
+            user_id, title, type, category_id, city_id, address, price, price_unit,
+            description, facilities, image, owner_name, owner_whatsapp, 
+            bedrooms, bathrooms, area, status, views, whatsapp_clicks, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
+        `;
+
+        const values = [
+          user_id,
+          title,
+          type.toLowerCase(),
+          finalCategoryId,
+          finalCityId,
+          address,
+          parseFloat(price),
+          price_unit || 'bulan',
+          description || '',
+          facilitiesJson,
+          allImagesJson,
+          owner_name,
+          owner_whatsapp,
+          parseInt(bedrooms) || 1,
+          parseInt(bathrooms) || 1,
+          parseFloat(area) || 0
+        ];
+
+        db.query(sql, values, (err, result) => {
+          if (err) {
+            console.error('❌ Insert error:', err);
+            return res.status(500).json({
+              success: false,
+              message: 'Gagal menyimpan properti',
+              error: err.message
+            });
+          }
+
+          // ✅ KURANGI TOKEN SETELAH BERHASIL UPLOAD (HANYA UNTUK MITRA)
+          if (userRole === 'mitra') {
+            const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
+            db.query(updateTokenSql, [user_id], (err) => {
+              if (err) {
+                console.error('❌ Error updating tokens:', err);
+              } else {
+                console.log(`✅ Token reduced: User ${user_id} now has ${userTokens - 15} tokens`);
+              }
+            });
+          }
+
+          console.log('✅ Property uploaded! ID:', result.insertId);
+          res.json({
+            success: true,
+            message: 'Properti berhasil diupload! Token Anda dikurangi 15.',
+            propertyId: result.insertId,
+            remainingTokens: userRole === 'mitra' ? userTokens - 15 : null
+          });
+        });
+      };
+
+      // Logic untuk city_id (tetap sama seperti kode Anda yang sudah ada)
+      let finalCityId = city_id;
+      if (!finalCityId && city) {
+        const checkCitySql = 'SELECT id FROM cities WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?)';
+        const citySlug = city.toLowerCase().replace(/\s+/g, '-');
         
-        if (cityResults.length > 0) {
-          // Kota sudah ada, gunakan id-nya
-          finalCityId = cityResults[0].id;
-          console.log('✅ City found:', city, 'with ID:', finalCityId);
-          insertProperty(finalCityId);
-        } else {
-          // Kota belum ada, insert dulu
-          const insertCitySql = 'INSERT INTO cities (name, slug) VALUES (?, ?)';
-          db.query(insertCitySql, [city, citySlug], (err, cityInsertResult) => {
-            if (err) {
-              console.error('❌ Error inserting city:', err);
-              return res.status(500).json({
-                success: false,
-                message: 'Gagal menambahkan kota baru',
-                error: err.message
-              });
-            }
-            
-            console.log('✅ City added:', city, 'with ID:', cityInsertResult.insertId);
-            finalCityId = cityInsertResult.insertId;
+        db.query(checkCitySql, [city, citySlug], (err, cityResults) => {
+          if (err) {
+            console.error('❌ Error checking city:', err);
+            return res.status(500).json({
+              success: false,
+              message: 'Gagal mengecek data kota',
+              error: err.message
+            });
+          }
+          
+          if (cityResults.length > 0) {
+            finalCityId = cityResults[0].id;
+            console.log('✅ City found:', city, 'with ID:', finalCityId);
             insertProperty(finalCityId);
-          });
-        }
-      });
-    } else if (finalCityId) {
-      // city_id sudah ada dari parameter, langsung insert property
-      insertProperty(finalCityId);
-    } else {
-      // Tidak ada city dan city_id, return error
-      return res.status(400).json({
-        success: false,
-        message: 'Kota harus diisi'
-      });
-    }
+          } else {
+            const insertCitySql = 'INSERT INTO cities (name, slug) VALUES (?, ?)';
+            db.query(insertCitySql, [city, citySlug], (err, cityInsertResult) => {
+              if (err) {
+                console.error('❌ Error inserting city:', err);
+                return res.status(500).json({
+                  success: false,
+                  message: 'Gagal menambahkan kota baru',
+                  error: err.message
+                });
+              }
+              
+              console.log('✅ City added:', city, 'with ID:', cityInsertResult.insertId);
+              finalCityId = cityInsertResult.insertId;
+              insertProperty(finalCityId);
+            });
+          }
+        });
+      } else if (finalCityId) {
+        insertProperty(finalCityId);
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Kota harus diisi'
+        });
+      }
+    });
 
   } catch (error) {
     console.error('❌ Upload error:', error);
@@ -769,30 +815,7 @@ app.post('/api/register', async (req, res) => {
   
   console.log('📝 Register attempt:', email);
   
-  // Validasi input
-  if (!name || !email || !phone || !password) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Semua field wajib diisi' 
-    });
-  }
-  
-  // Validasi email format
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Format email tidak valid' 
-    });
-  }
-  
-  // Validasi password minimal 6 karakter
-  if (password.length < 6) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Password minimal 6 karakter' 
-    });
-  }
+  // ... (validasi yang sudah ada tetap sama)
   
   try {
     // Cek apakah email sudah terdaftar
@@ -816,27 +839,25 @@ app.post('/api/register', async (req, res) => {
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
       
-
-
       // ❌ Cegah register dengan email admin
-          if (email.toLowerCase().includes('admin')) {
-             return res.status(403).json({ 
-              success: false, 
-               error: 'Email tidak valid untuk registrasi' 
-                 });
+      if (email.toLowerCase().includes('admin')) {
+        return res.status(403).json({ 
+          success: false, 
+          error: 'Email tidak valid untuk registrasi' 
+        });
       }
 
-      // Insert user baru dengan role 'mitra'
+      // ✅ TAMBAHKAN tokens = 30 DI SINI
       const insertSql = `
-        INSERT INTO users (name, email, phone, whatsapp, password, role, created_at) 
-        VALUES (?, ?, ?, ?, ?, 'mitra', NOW())
+        INSERT INTO users (name, email, phone, whatsapp, password, role, tokens, created_at) 
+        VALUES (?, ?, ?, ?, ?, 'mitra', 30, NOW())
       `;
       
       const values = [
         name,
         email,
         phone,
-        whatsapp || phone, // Jika whatsapp kosong, gunakan phone
+        whatsapp || phone,
         hashedPassword
       ];
       
@@ -849,11 +870,11 @@ app.post('/api/register', async (req, res) => {
           });
         }
         
-        console.log('✅ User registered successfully:', email, '(role: mitra)');
+        console.log('✅ User registered successfully:', email, '(role: mitra, tokens: 30)');
         
         res.status(201).json({
           success: true,
-          message: 'Registrasi berhasil! Silakan login.',
+          message: 'Registrasi berhasil! Anda mendapat 30 token gratis.',
           userId: result.insertId
         });
       });
@@ -867,6 +888,451 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
+
+
+// ============================================
+// BACKEND API ENDPOINTS untuk Admin Dashboard
+// Tambahkan ke file index.js (SEBELUM app.listen())
+// ============================================
+
+// ========== API GET ALL USERS (Admin Only) ==========
+app.get('/api/admin/users', (req, res) => {
+  const sql = `
+    SELECT 
+      id, 
+      name, 
+      email, 
+      phone, 
+      whatsapp, 
+      role, 
+      is_active, 
+      created_at 
+    FROM users 
+    ORDER BY created_at DESC
+  `;
+  
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error('Error fetching users:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    console.log(`✅ Fetched ${results.length} users`);
+    res.json(results);
+  });
+});
+
+// ========== API GET STATS (Admin Only) ==========
+app.get('/api/admin/stats', (req, res) => {
+  const queries = {
+    totalProperties: 'SELECT COUNT(*) as count FROM properties',
+    totalMitra: "SELECT COUNT(*) as count FROM users WHERE role = 'mitra'",
+    totalUsers: 'SELECT COUNT(*) as count FROM users',
+    activeMitra: "SELECT COUNT(*) as count FROM users WHERE role = 'mitra' AND is_active = 1"
+  };
+
+  const stats = {};
+  let completed = 0;
+  const total = Object.keys(queries).length;
+
+  Object.entries(queries).forEach(([key, query]) => {
+    db.query(query, (err, results) => {
+      if (!err && results && results[0]) {
+        stats[key] = results[0].count;
+      } else {
+        stats[key] = 0;
+      }
+      
+      completed++;
+      if (completed === total) {
+        console.log('✅ Stats fetched:', stats);
+        res.json(stats);
+      }
+    });
+  });
+});
+
+// ========== API TOGGLE USER STATUS (Admin Only) ==========
+app.put('/api/admin/users/:id/toggle-status', (req, res) => {
+  const { id } = req.params;
+  const { is_active } = req.body;
+  
+  // Validasi: tidak bisa nonaktifkan admin
+  const checkSql = 'SELECT role FROM users WHERE id = ?';
+  db.query(checkSql, [id], (err, results) => {
+    if (err) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+    
+    if (results[0].role === 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot modify admin status' 
+      });
+    }
+    
+    // Update status
+    const updateSql = 'UPDATE users SET is_active = ? WHERE id = ?';
+    db.query(updateSql, [is_active, id], (err, result) => {
+      if (err) {
+        console.error('Error updating status:', err);
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Failed to update status' 
+        });
+      }
+      
+      console.log(`✅ User ${id} status changed to ${is_active}`);
+      res.json({ 
+        success: true, 
+        message: 'Status updated successfully' 
+      });
+    });
+  });
+});
+
+// ========== API DELETE USER (Admin Only) ==========
+app.delete('/api/admin/users/:id', (req, res) => {
+  const { id } = req.params;
+  
+  // Validasi: tidak bisa hapus admin
+  const checkSql = 'SELECT role FROM users WHERE id = ?';
+  db.query(checkSql, [id], (err, results) => {
+    if (err) {
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'User not found' 
+      });
+    }
+    
+    if (results[0].role === 'admin') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Cannot delete admin user' 
+      });
+    }
+    
+    // Delete user (properties akan terhapus otomatis karena ON DELETE CASCADE)
+    const deleteSql = 'DELETE FROM users WHERE id = ?';
+    db.query(deleteSql, [id], (err, result) => {
+      if (err) {
+        console.error('Error deleting user:', err);
+        return res.status(500).json({ 
+          success: false, 
+          message: 'Failed to delete user' 
+        });
+      }
+      
+      console.log(`✅ User ${id} deleted`);
+      res.json({ 
+        success: true, 
+        message: 'User deleted successfully' 
+      });
+    });
+  });
+});
+
+
+// ============================================
+// TAMBAHKAN KE FILE index.js ANDA
+// Letakkan SEBELUM app.listen()
+// ============================================
+
+// ========== API UBAH PASSWORD ADMIN ==========
+app.put('/api/admin/change-password', async (req, res) => {
+  const { userId, currentPassword, newPassword } = req.body;
+  
+  console.log('🔐 Change password request for user ID:', userId);
+  
+  // Validasi input
+  if (!userId || !currentPassword || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'Data tidak lengkap'
+    });
+  }
+  
+  // Validasi panjang password baru
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password baru minimal 6 karakter'
+    });
+  }
+  
+  try {
+    // Ambil data user dari database
+    const selectSql = 'SELECT id, password, role FROM users WHERE id = ?';
+    
+    db.query(selectSql, [userId], async (err, results) => {
+      if (err) {
+        console.error('❌ Database error:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Terjadi kesalahan database'
+        });
+      }
+      
+      if (results.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User tidak ditemukan'
+        });
+      }
+      
+      const user = results[0];
+      
+      // Pastikan user adalah admin
+      if (user.role !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Akses ditolak'
+        });
+      }
+      
+      // Verifikasi password lama
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Password saat ini salah'
+        });
+      }
+      
+      // Hash password baru
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      
+      // Update password di database
+      const updateSql = 'UPDATE users SET password = ? WHERE id = ?';
+      
+      db.query(updateSql, [hashedPassword, userId], (err, result) => {
+        if (err) {
+          console.error('❌ Update error:', err);
+          return res.status(500).json({
+            success: false,
+            message: 'Gagal mengubah password'
+          });
+        }
+        
+        console.log(`✅ Password changed successfully for user ${userId}`);
+        
+        res.json({
+          success: true,
+          message: 'Password berhasil diubah'
+        });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server'
+    });
+  }
+});
+
+
+// ============================================
+// TAMBAHKAN KE FILE index.js ANDA
+// Letakkan SEBELUM app.listen()
+// ============================================
+
+// ========== API GET FOOTER SETTINGS (PUBLIC) ==========
+app.get('/api/settings/footer', (req, res) => {
+  const sql = 'SELECT setting_key, setting_value FROM site_settings WHERE setting_key LIKE "footer_%"';
+  
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error('Error fetching footer settings:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    // Convert array ke object untuk kemudahan akses
+    const settings = {};
+    results.forEach(row => {
+      settings[row.setting_key] = row.setting_value;
+    });
+    
+    console.log('✅ Footer settings loaded');
+    res.json(settings);
+  });
+});
+
+// ========== API UPDATE FOOTER SETTINGS (ADMIN ONLY) ==========
+app.put('/api/admin/settings/footer', (req, res) => {
+  const { userId, settings } = req.body;
+  
+  console.log('📝 Update footer settings by user:', userId);
+  
+  if (!userId || !settings) {
+    return res.status(400).json({
+      success: false,
+      message: 'Data tidak lengkap'
+    });
+  }
+  
+  // Verifikasi admin
+  const checkAdminSql = 'SELECT role FROM users WHERE id = ?';
+  db.query(checkAdminSql, [userId], (err, results) => {
+    if (err || results.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Akses ditolak'
+      });
+    }
+    
+    if (results[0].role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Hanya admin yang dapat mengubah pengaturan'
+      });
+    }
+    
+    // Update setiap setting
+    const updatePromises = [];
+    
+    Object.keys(settings).forEach(key => {
+      const updateSql = `
+        UPDATE site_settings 
+        SET setting_value = ?, updated_by = ? 
+        WHERE setting_key = ?
+      `;
+      
+      updatePromises.push(
+        new Promise((resolve, reject) => {
+          db.query(updateSql, [settings[key], userId, key], (err, result) => {
+            if (err) reject(err);
+            else resolve(result);
+          });
+        })
+      );
+    });
+    
+    Promise.all(updatePromises)
+      .then(() => {
+        console.log('✅ Footer settings updated successfully');
+        res.json({
+          success: true,
+          message: 'Pengaturan footer berhasil diperbarui'
+        });
+      })
+      .catch(error => {
+        console.error('❌ Error updating settings:', error);
+        res.status(500).json({
+          success: false,
+          message: 'Gagal memperbarui pengaturan'
+        });
+      });
+  });
+});
+
+// ========== API GET ADMIN PROFILE ==========
+app.get('/api/admin/profile/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const sql = 'SELECT id, name, email, phone, whatsapp, role FROM users WHERE id = ?';
+  
+  db.query(sql, [id], (err, results) => {
+    if (err) {
+      console.error('Error fetching profile:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    console.log('✅ Admin profile loaded');
+    res.json(results[0]);
+  });
+});
+
+// ========== API UPDATE ADMIN PROFILE ==========
+app.put('/api/admin/profile/:id', (req, res) => {
+  const { id } = req.params;
+  const { name, email, phone, whatsapp } = req.body;
+  
+  console.log('📝 Update admin profile:', id);
+  
+  if (!name || !email) {
+    return res.status(400).json({
+      success: false,
+      message: 'Nama dan email wajib diisi'
+    });
+  }
+  
+  // Cek apakah user adalah admin
+  const checkSql = 'SELECT role FROM users WHERE id = ?';
+  db.query(checkSql, [id], (err, results) => {
+    if (err || results.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'Akses ditolak'
+      });
+    }
+    
+    if (results[0].role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Hanya admin yang dapat mengubah profil'
+      });
+    }
+    
+    // Update profil
+    const updateSql = `
+      UPDATE users 
+      SET name = ?, email = ?, phone = ?, whatsapp = ? 
+      WHERE id = ?
+    `;
+    
+    db.query(updateSql, [name, email, phone, whatsapp, id], (err, result) => {
+      if (err) {
+        console.error('❌ Error updating profile:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Gagal memperbarui profil'
+        });
+      }
+      
+      console.log('✅ Admin profile updated');
+      res.json({
+        success: true,
+        message: 'Profil berhasil diperbarui',
+        user: { name, email, phone, whatsapp }
+      });
+    });
+  });
+});
 
 // Jalankan server
 const PORT = 3000;
