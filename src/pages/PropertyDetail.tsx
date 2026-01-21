@@ -66,11 +66,11 @@ export default function PropertyDetail() {
   };
 
   const typeBadgeColors: Record<string, string> = {
-    'kost': 'bg-blue-100 text-blue-700 border-blue-200',
-    'guesthouse': 'bg-green-100 text-green-700 border-green-200',
-    'guest house': 'bg-green-100 text-green-700 border-green-200',
-    'villa': 'bg-purple-100 text-purple-700 border-purple-200',
-  };
+  'kost': 'bg-blue-100 text-blue-700 border-blue-200',
+  'guesthouse': 'bg-purple-100 text-purple-700 border-purple-200', // ✅ UNGU
+  'guest house': 'bg-purple-100 text-purple-700 border-purple-200', // ✅ UNGU
+  'villa': 'bg-green-100 text-green-700 border-green-200', // ✅ HIJAU
+};
 
   const formatPrice = (priceValue: number): string => {
     if (!priceValue || isNaN(priceValue) || priceValue === 0) {

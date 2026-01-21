@@ -142,12 +142,8 @@ export default function MitraDashboard() {
   
   setUser(parsedUser);
   
-  // ✅ TAMBAH BAGIAN INI
-  if (parsedUser.tokens !== undefined) {
-    setUserTokens(parsedUser.tokens);
-  } else {
-    fetchUserTokens(parsedUser.id);
-  }
+  // ✅ SELALU FETCH TOKEN DARI API (tidak pakai localStorage)
+  fetchUserTokens(parsedUser.id);
   
   fetchProperties(parsedUser.id);
   fetchIndonesiaCities();
@@ -260,6 +256,16 @@ export default function MitraDashboard() {
     if (response.ok) {
       const data = await response.json();
       setUserTokens(data.tokens);
+      
+      // ✅ UPDATE LOCALSTORAGE JUGA
+      const userData = localStorage.getItem('user');
+      if (userData) {
+        const parsedUser = JSON.parse(userData);
+        parsedUser.tokens = data.tokens;
+        localStorage.setItem('user', JSON.stringify(parsedUser));
+        setUser(parsedUser);
+      }
+      
       console.log('✅ User tokens:', data.tokens);
     }
   } catch (error) {
@@ -461,9 +467,15 @@ if (totalSize > maxSize) {
 
       const result = await response.json();
 
+      
       if (response.ok && result.success) {
     const newTokens = userTokens - 15;
-    setUserTokens(newTokens); // ✅ Update tokens di UI
+    setUserTokens(newTokens); // Update tokens di UI
+    
+    // ✅ UPDATE LOCALSTORAGE
+    const updatedUser = { ...user, tokens: newTokens };
+    localStorage.setItem('user', JSON.stringify(updatedUser));
+    setUser(updatedUser); // Update state user juga
     
     toast({
       title: 'Berhasil! 🎉',
@@ -472,6 +484,8 @@ if (totalSize > maxSize) {
     setIsDialogOpen(false);
     resetForm();
     fetchProperties(user.id);
+
+
       } else {
         toast({
           title: 'Error',

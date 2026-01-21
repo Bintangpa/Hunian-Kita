@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import AdminIsiToken from './AdminIsiToken'; 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -529,21 +530,7 @@ export default function AdminDashboard() {
         );
       
       case 'isi-token':
-        return (
-          <Card>
-            <CardHeader>
-              <CardTitle>Isi Token</CardTitle>
-              <CardDescription>Kelola token dan saldo pengguna</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-12 text-muted-foreground">
-                <Coins className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium mb-2">Fitur Isi Token</p>
-                <p className="text-sm">Halaman ini sedang dalam pengembangan</p>
-              </div>
-            </CardContent>
-          </Card>
-        );
+        return <AdminIsiToken />;
       
       default:
         return null;

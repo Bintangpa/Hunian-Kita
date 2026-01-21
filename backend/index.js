@@ -905,7 +905,8 @@ app.get('/api/admin/users', (req, res) => {
       phone, 
       whatsapp, 
       role, 
-      is_active, 
+      is_active,
+      tokens,      -- ✅ TAMBAH INI
       created_at 
     FROM users 
     ORDER BY created_at DESC
@@ -924,6 +925,7 @@ app.get('/api/admin/users', (req, res) => {
     res.json(results);
   });
 });
+
 
 // ========== API GET STATS (Admin Only) ==========
 app.get('/api/admin/stats', (req, res) => {
@@ -1330,6 +1332,125 @@ app.put('/api/admin/profile/:id', (req, res) => {
         message: 'Profil berhasil diperbarui',
         user: { name, email, phone, whatsapp }
       });
+    });
+  });
+});
+
+
+// ========== API ADMIN: TAMBAH TOKEN KE USER ==========
+app.post('/api/admin/add-tokens', (req, res) => {
+  const { userId, tokens } = req.body;
+  
+  console.log('🪙 Admin adding tokens:', { userId, tokens });
+  
+  // Validasi input
+  if (!userId || !tokens) {
+    return res.status(400).json({
+      success: false,
+      message: 'User ID dan jumlah token wajib diisi'
+    });
+  }
+  
+  // Validasi token harus kelipatan 15
+  const validPackages = [15, 30, 75, 150, 330];
+  if (!validPackages.includes(tokens)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Paket token tidak valid'
+    });
+  }
+  
+  // Cek apakah user ada dan role-nya mitra
+  const checkUserSql = 'SELECT id, name, role, tokens FROM users WHERE id = ?';
+  
+  db.query(checkUserSql, [userId], (err, results) => {
+    if (err) {
+      console.error('❌ Error checking user:', err);
+      return res.status(500).json({
+        success: false,
+        message: 'Database error'
+      });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User tidak ditemukan'
+      });
+    }
+    
+    const user = results[0];
+    
+    // Pastikan user adalah mitra
+    if (user.role !== 'mitra') {
+      return res.status(403).json({
+        success: false,
+        message: 'Hanya bisa menambah token ke akun mitra'
+      });
+    }
+    
+    // Update token
+    const updateSql = 'UPDATE users SET tokens = tokens + ? WHERE id = ?';
+    
+    db.query(updateSql, [tokens, userId], (err, result) => {
+      if (err) {
+        console.error('❌ Error updating tokens:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Gagal menambahkan token'
+        });
+      }
+      
+      const newTotal = user.tokens + tokens;
+      
+      console.log(`✅ Tokens added: User ${user.name} now has ${newTotal} tokens (+${tokens})`);
+      
+      res.json({
+        success: true,
+        message: 'Token berhasil ditambahkan',
+        data: {
+          userId: user.id,
+          userName: user.name,
+          tokensAdded: tokens,
+          newTotal: newTotal
+        }
+      });
+    });
+  });
+});
+
+
+// ========== API GET USER TOKENS ==========
+app.get('/api/users/:id/tokens', (req, res) => {
+  const { id } = req.params;
+  
+  console.log('🪙 Fetching tokens for user:', id);
+  
+  const sql = 'SELECT tokens FROM users WHERE id = ?';
+  
+  db.query(sql, [id], (err, results) => {
+    if (err) {
+      console.error('❌ Error fetching tokens:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    const tokens = results[0].tokens || 0;
+    
+    console.log(`✅ User ${id} has ${tokens} tokens`);
+    
+    res.json({
+      success: true,
+      tokens: tokens
     });
   });
 });
