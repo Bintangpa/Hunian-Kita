@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, ChevronsUpDown,Coins } from 'lucide-react';
+import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, Coins } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -72,6 +72,35 @@ interface IndonesiaCity {
   id: string;
   name: string;
 }
+
+
+const customScrollbarStyles = `
+  .scrollable-city-list {
+    max-height: 300px;
+    overflow-y: scroll !important;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+  
+  .scrollable-city-list::-webkit-scrollbar {
+    width: 8px;
+  }
+  
+  .scrollable-city-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+  }
+  
+  .scrollable-city-list::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+  }
+  
+  .scrollable-city-list::-webkit-scrollbar-thumb:hover {
+    background: #555;
+  }
+`;
+
 
 const FACILITIES_OPTIONS = [
   'AC',
@@ -124,6 +153,24 @@ export default function MitraDashboard() {
     bathrooms: '1',
     area: '',
   });
+
+
+  // Tutup dropdown kota saat klik di luar
+useEffect(() => {
+  const handleClickOutside = (event: MouseEvent) => {
+    const target = event.target as HTMLElement;
+    if (!target.closest('#city') && !target.closest('.city-dropdown')) {
+      setOpenCityCombo(false);
+    }
+  };
+
+  if (openCityCombo) {
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }
+}, [openCityCombo]);
+
+
 
   useEffect(() => {
   const userData = localStorage.getItem('user');
@@ -590,6 +637,8 @@ if (totalSize > maxSize) {
   const pendingProperties = properties.filter(p => p.status === 'pending').length;
 
   return (
+   <>
+    <style>{customScrollbarStyles}</style>
     <div className="min-h-screen bg-background">
       <header className="bg-card border-b border-border">
         <div className="container mx-auto px-4 py-4">
@@ -783,15 +832,15 @@ if (totalSize > maxSize) {
       </main>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Tambah Properti Baru</DialogTitle>
-            <DialogDescription>
-              Lengkapi informasi properti Anda. Semua field bertanda * wajib diisi.
-            </DialogDescription>
-          </DialogHeader>
+  <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+    <DialogHeader>
+      <DialogTitle>Tambah Properti Baru</DialogTitle>
+      <DialogDescription>
+        Lengkapi informasi properti Anda. Semua field bertanda * wajib diisi.
+      </DialogDescription>
+    </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
                 <Label htmlFor="title">
@@ -822,58 +871,70 @@ if (totalSize > maxSize) {
                 </Select>
               </div>
 
-              <div>
-                <Label htmlFor="city">
-                  Kota <span className="text-destructive">*</span>
-                </Label>
-                <Popover open={openCityCombo} onOpenChange={setOpenCityCombo}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={openCityCombo}
-                      className="w-full justify-between"
-                      disabled={loadingCities}
-                    >
-                      {loadingCities ? (
-                        <span className="flex items-center gap-2">
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-                          Memuat kota...
-                        </span>
-                      ) : (
-                        formData.city || "Pilih kota..."
-                      )}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-full p-0">
-                    <Command>
-                      <CommandInput placeholder="Cari kota..." />
-                      <CommandEmpty>Kota tidak ditemukan.</CommandEmpty>
-                      <CommandGroup className="max-h-64 overflow-auto">
-                        {cities.map((city) => (
-                          <CommandItem
-                            key={city.id}
-                            value={city.name}
-                            onSelect={() => handleCitySelect(city.id.toString(), city.name)}
-                          >
-                            <Check
-                              className={cn(
-                                "mr-2 h-4 w-4",
-                                formData.city === city.name ? "opacity-100" : "opacity-0"
-                              )}
-                            />
-                            {city.name}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {cities.length > 0 ? `${cities.length} kota tersedia` : 'Memuat data kota...'}
-                </p>
-              </div>
+
+            <div>
+  <Label htmlFor="city">
+    Kota <span className="text-destructive">*</span>
+  </Label>
+  
+  <div className="relative">
+    <Input
+      id="city"
+      value={formData.city}
+      onChange={(e) => {
+        handleInputChange('city', e.target.value);
+        setOpenCityCombo(true);
+      }}
+      onFocus={() => setOpenCityCombo(true)}
+      placeholder={loadingCities ? "Memuat kota..." : "Ketik untuk mencari kota..."}
+      disabled={loadingCities}
+      required
+      autoComplete="off"
+    />
+    
+    {openCityCombo && cities.length > 0 && (
+      <div 
+        className="city-dropdown absolute z-10 w-full mt-1 bg-white border border-border rounded-md shadow-lg"
+        style={{ maxHeight: '240px', overflowY: 'scroll', overflowX: 'hidden' }}
+        onWheel={(e) => e.stopPropagation()}
+        onTouchMove={(e) => e.stopPropagation()}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        {cities
+          .filter(city => 
+            city.name.toLowerCase().includes((formData.city || '').toLowerCase())
+          )
+          .map((city) => (
+            <div
+              key={city.id}
+              className={cn(
+                "px-3 py-2 cursor-pointer hover:bg-accent text-sm",
+                formData.city === city.name && "bg-accent"
+              )}
+              onClick={() => {
+                handleCitySelect(city.id.toString(), city.name);
+                setOpenCityCombo(false);
+              }}
+            >
+              {city.name}
+            </div>
+          ))}
+        {cities.filter(city => 
+          city.name.toLowerCase().includes((formData.city || '').toLowerCase())
+        ).length === 0 && (
+          <div className="px-3 py-2 text-sm text-muted-foreground">
+            Tidak ada kota yang cocok
+          </div>
+        )}
+      </div>
+    )}
+  </div>
+  
+  <p className="text-xs text-muted-foreground mt-1">
+    {cities.length > 0 ? `${cities.length} kota tersedia` : 'Memuat data kota...'}
+  </p>
+</div>
+
 
               <div className="md:col-span-2">
                 <Label htmlFor="address">
@@ -1079,5 +1140,6 @@ if (totalSize > maxSize) {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }
