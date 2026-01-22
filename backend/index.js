@@ -811,16 +811,23 @@ app.put('/api/properties/:id', upload.array('images', 5), (req, res) => {
 
 // ========== API REGISTER ==========
 app.post('/api/register', async (req, res) => {
-  const { name, email, phone, whatsapp, password } = req.body;
+  const { name, email, phone, password } = req.body; // ✅ Hapus whatsapp dari sini
   
-  console.log('📝 Register attempt:', email);
+  console.log('🔐 Register attempt:', email);
   
-  // ... (validasi yang sudah ada tetap sama)
+  // Validasi input
+  if (!name || !email || !phone || !password) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Semua field wajib diisi' 
+    });
+  }
   
   try {
-    // Cek apakah email sudah terdaftar
-    const checkEmailSql = 'SELECT id FROM users WHERE email = ?';
-    db.query(checkEmailSql, [email], async (err, results) => {
+    // ✅ CEK EMAIL DAN PHONE SEKALIGUS
+    const checkDuplicateSql = 'SELECT id, email, phone FROM users WHERE email = ? OR phone = ?';
+    
+    db.query(checkDuplicateSql, [email, phone], async (err, results) => {
       if (err) {
         console.error('❌ Database error:', err);
         return res.status(500).json({ 
@@ -829,17 +836,27 @@ app.post('/api/register', async (req, res) => {
         });
       }
       
-      if (results.length > 0) {
+      // Validasi email dan phone duplikat
+      const emailExists = results.find(user => user.email === email);
+      if (emailExists) {
         return res.status(400).json({ 
           success: false, 
           error: 'Email sudah terdaftar' 
         });
       }
       
+      const phoneExists = results.find(user => user.phone === phone);
+      if (phoneExists) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Nomor telepon sudah terdaftar' 
+        });
+      }
+      
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
       
-      // ❌ Cegah register dengan email admin
+      // Cegah register dengan email admin
       if (email.toLowerCase().includes('admin')) {
         return res.status(403).json({ 
           success: false, 
@@ -847,7 +864,18 @@ app.post('/api/register', async (req, res) => {
         });
       }
 
-      // ✅ TAMBAHKAN tokens = 30 DI SINI
+      // ✅ KONVERSI NOMOR TELEPON KE FORMAT WHATSAPP (62xxx)
+      let whatsappNumber = phone.replace(/\D/g, ''); // Hapus semua karakter non-digit
+      
+      if (whatsappNumber.startsWith('0')) {
+        // Jika diawali 0, ganti dengan 62
+        whatsappNumber = '62' + whatsappNumber.substring(1);
+      } else if (!whatsappNumber.startsWith('62')) {
+        // Jika belum ada kode negara, tambahkan 62
+        whatsappNumber = '62' + whatsappNumber;
+      }
+
+      // ✅ INSERT USER BARU dengan whatsapp otomatis terkonversi
       const insertSql = `
         INSERT INTO users (name, email, phone, whatsapp, password, role, tokens, created_at) 
         VALUES (?, ?, ?, ?, ?, 'mitra', 30, NOW())
@@ -857,7 +885,7 @@ app.post('/api/register', async (req, res) => {
         name,
         email,
         phone,
-        whatsapp || phone,
+        whatsappNumber, // ✅ Gunakan hasil konversi
         hashedPassword
       ];
       
@@ -871,6 +899,7 @@ app.post('/api/register', async (req, res) => {
         }
         
         console.log('✅ User registered successfully:', email, '(role: mitra, tokens: 30)');
+        console.log(`📞 Phone: ${phone} → WhatsApp: ${whatsappNumber}`); // ✅ Log konversi
         
         res.status(201).json({
           success: true,
@@ -887,7 +916,6 @@ app.post('/api/register', async (req, res) => {
     });
   }
 });
-
 
 
 // ============================================
@@ -1454,6 +1482,129 @@ app.get('/api/users/:id/tokens', (req, res) => {
     });
   });
 });
+
+
+// ========== API UBAH PASSWORD MITRA ==========
+app.put('/api/mitra/change-password', async (req, res) => {
+  const { userId, currentPassword, newPassword } = req.body;
+  
+  console.log('🔐 Change password request for mitra ID:', userId);
+  
+  // Validasi input
+  if (!userId || !currentPassword || !newPassword) {
+    return res.status(400).json({
+      success: false,
+      message: 'Data tidak lengkap'
+    });
+  }
+  
+  // Validasi panjang password baru
+  if (newPassword.length < 6) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password baru minimal 6 karakter'
+    });
+  }
+  
+  try {
+    // Ambil data user dari database
+    const selectSql = 'SELECT id, password, role FROM users WHERE id = ?';
+    
+    db.query(selectSql, [userId], async (err, results) => {
+      if (err) {
+        console.error('❌ Database error:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Terjadi kesalahan database'
+        });
+      }
+      
+      if (results.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User tidak ditemukan'
+        });
+      }
+      
+      const user = results[0];
+      
+      // Pastikan user adalah mitra
+      if (user.role !== 'mitra') {
+        return res.status(403).json({
+          success: false,
+          message: 'Akses ditolak'
+        });
+      }
+      
+      // Verifikasi password lama
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Password saat ini salah'
+        });
+      }
+      
+      // Hash password baru
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      
+      // Update password di database
+      const updateSql = 'UPDATE users SET password = ? WHERE id = ?';
+      
+      db.query(updateSql, [hashedPassword, userId], (err, result) => {
+        if (err) {
+          console.error('❌ Update error:', err);
+          return res.status(500).json({
+            success: false,
+            message: 'Gagal mengubah password'
+          });
+        }
+        
+        console.log(`✅ Password changed successfully for mitra ${userId}`);
+        
+        res.json({
+          success: true,
+          message: 'Password berhasil diubah'
+        });
+      });
+    });
+  } catch (error) {
+    console.error('❌ Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan server'
+    });
+  }
+});
+
+// ========== API GET USER BY ID (untuk profil mitra) ==========
+app.get('/api/users/:id', (req, res) => {
+  const { id } = req.params;
+  
+  const sql = 'SELECT id, name, email, phone, whatsapp, role, tokens FROM users WHERE id = ?';
+  
+  db.query(sql, [id], (err, results) => {
+    if (err) {
+      console.error('Error fetching user:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    if (results.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+    
+    console.log('✅ User data loaded:', results[0].email);
+    res.json(results[0]);
+  });
+});
+
 
 // Jalankan server
 const PORT = 3000;

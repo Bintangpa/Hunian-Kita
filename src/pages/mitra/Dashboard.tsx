@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, Coins } from 'lucide-react';
+import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, Coins,Settings } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -129,6 +129,7 @@ export default function MitraDashboard() {
   const [loading, setLoading] = useState(true);
   const [loadingCities, setLoadingCities] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
   const [openCityCombo, setOpenCityCombo] = useState(false);
@@ -172,29 +173,51 @@ useEffect(() => {
 
 
 
-  useEffect(() => {
-  const userData = localStorage.getItem('user');
+ useEffect(() => {
+  const loadUserData = async () => {
+    const userData = localStorage.getItem('user');
+    
+    if (!userData) {
+      navigate('/login');
+      return;
+    }
+    
+    const parsedUser = JSON.parse(userData);
+    
+    if (parsedUser.role !== 'mitra') {
+      navigate('/');
+      return;
+    }
+    
+    try {
+      // ✅ FETCH USER LENGKAP DARI API
+      const response = await fetch(`http://localhost:3000/api/users/${parsedUser.id}`);
+      const fullUserData = await response.json();
+      
+      console.log('✅ FULL USER DATA:', fullUserData);
+      console.log('📱 WhatsApp:', fullUserData.whatsapp);
+      console.log('📞 Phone:', fullUserData.phone);
+      
+      setUser(fullUserData);
+      
+      // Fetch data lainnya setelah user data ready
+      fetchUserTokens(parsedUser.id);
+      fetchProperties(parsedUser.id);
+      fetchIndonesiaCities();
+    } catch (error) {
+      console.error('❌ ERROR FETCH USER:', error);
+      // Fallback ke localStorage jika API gagal
+      setUser(parsedUser);
+      fetchUserTokens(parsedUser.id);
+      fetchProperties(parsedUser.id);
+      fetchIndonesiaCities();
+    }
+  };
   
-  if (!userData) {
-    navigate('/login');
-    return;
-  }
-  
-  const parsedUser = JSON.parse(userData);
-  
-  if (parsedUser.role !== 'mitra') {
-    navigate('/');
-    return;
-  }
-  
-  setUser(parsedUser);
-  
-  // ✅ SELALU FETCH TOKEN DARI API (tidak pakai localStorage)
-  fetchUserTokens(parsedUser.id);
-  
-  fetchProperties(parsedUser.id);
-  fetchIndonesiaCities();
+  loadUserData();
 }, [navigate]);
+
+
 
   // ✅ Fetch kota dari API Indonesia
   const fetchIndonesiaCities = async () => {
@@ -439,7 +462,7 @@ const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
 
     
 // Validasi field wajib
-if (!formData.title || !formData.type || !formData.city || !formData.address || !formData.price || !formData.owner_name || !formData.owner_whatsapp) {
+if (!formData.title || !formData.type || !formData.city || !formData.address || !formData.price || !formData.owner_name || !formData.owner_whatsapp ) {
   toast({
     title: 'Error',
     description: 'Mohon lengkapi semua field yang wajib diisi',
@@ -487,7 +510,9 @@ if (totalSize > maxSize) {
       uploadData.append('description', formData.description);
       uploadData.append('facilities', JSON.stringify(formData.facilities));
       uploadData.append('owner_name', formData.owner_name);
-      uploadData.append('owner_whatsapp', formData.owner_whatsapp);
+      
+     
+      uploadData.append('owner_whatsapp', user?.whatsapp || user?.phone || '');
       uploadData.append('bedrooms', formData.bedrooms);
       uploadData.append('bathrooms', formData.bathrooms);
       uploadData.append('area', formData.area || '0');
@@ -624,6 +649,10 @@ if (totalSize > maxSize) {
     );
   };
 
+{console.log('🔍 USER SAAT RENDER FORM:', user)}
+  {console.log('📱 VALUE WHATSAPP:', user?.whatsapp || user?.phone || "")}
+
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -635,6 +664,20 @@ if (totalSize > maxSize) {
   const totalProperties = properties.length;
   const activeProperties = properties.filter(p => p.status === 'available').length;
   const pendingProperties = properties.filter(p => p.status === 'pending').length;
+
+
+console.log('🔍 USER DATA DI FORM:', user);
+  console.log('🔍 WHATSAPP:', user?.whatsapp);
+  console.log('🔍 PHONE:', user?.phone);
+
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
 
   return (
    <>
@@ -655,6 +698,9 @@ if (totalSize > maxSize) {
               </span>
             </Link>
             
+
+          
+
             <div className="flex items-center gap-4">
               <div className="text-right">
                 <p className="text-sm font-medium">{user.name}</p>
@@ -664,6 +710,19 @@ if (totalSize > maxSize) {
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout
               </Button>
+
+
+    <Button 
+            onClick={() => navigate('/mitra/settings')} 
+            variant="outline" 
+            size="sm"
+            >
+              <Settings className="w-4 h-4 mr-2" />
+                  Pengaturan
+            </Button>
+
+
+
             </div>
           </div>
         </div>
@@ -1031,20 +1090,25 @@ if (totalSize > maxSize) {
                 />
               </div>
 
-              <div>
-                <Label htmlFor="owner_whatsapp">
-                  Nomor WhatsApp <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="owner_whatsapp"
-                  value={formData.owner_whatsapp}
-                  onChange={(e) => handleInputChange('owner_whatsapp', e.target.value)}
-                  placeholder="628123456789"
-                  required
-                />
-              </div>
+   
+<div>
+  <Label htmlFor="owner_whatsapp">
+    Nomor WhatsApp <span className="text-destructive">*</span>
+  </Label>
+  <Input
+    id="owner_whatsapp"
+    value={user?.whatsapp || user?.phone || 'Nomor tidak tersedia'}
+    readOnly
+    disabled
+    className="bg-muted cursor-not-allowed"
+  />
+  <p className="text-xs text-muted-foreground mt-1">
+    📱 Nomor WhatsApp dari akun Anda (tidak dapat diubah)
+  </p>
+</div>
 
-              <div className="md:col-span-2">
+
+            <div>
                 <Label htmlFor="description">Deskripsi</Label>
                 <Textarea
                   id="description"

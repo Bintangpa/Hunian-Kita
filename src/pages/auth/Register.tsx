@@ -11,7 +11,6 @@ export default function Register() {
     name: "",
     email: "",
     phone: "",
-    whatsapp: "",
     password: "",
     confirmPassword: "",
   });
@@ -26,10 +25,6 @@ export default function Register() {
       ...prev,
       [name]: value,
     }));
-    // Auto-fill WhatsApp dengan nomor telepon jika kosong
-    if (name === "phone" && !formData.whatsapp) {
-      setFormData((prev) => ({ ...prev, whatsapp: value }));
-    }
   };
 
   const validateForm = () => {
@@ -83,7 +78,6 @@ export default function Register() {
           name: formData.name,
           email: formData.email,
           phone: formData.phone,
-          whatsapp: formData.whatsapp || formData.phone,
           password: formData.password,
         }),
       });
@@ -94,7 +88,6 @@ export default function Register() {
         setError(data.error || data.message || "Registrasi gagal");
       } else {
         setSuccess(data.message || "Registrasi berhasil! Silakan login.");
-        // Redirect ke login setelah 2 detik
         setTimeout(() => {
           navigate("/login");
         }, 2000);
@@ -113,7 +106,6 @@ export default function Register() {
       
       <main className="flex-1 flex items-center justify-center px-4 py-12 md:py-20">
         <div className="w-full max-w-md">
-          {/* Logo & Title Section */}
           <div className="text-center mb-8 animate-slide-up">
             <Link to="/" className="inline-flex items-center gap-2 mb-4">
               <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
@@ -128,10 +120,8 @@ export default function Register() {
             </p>
           </div>
 
-          {/* Register Card */}
           <div className="bg-card border border-border rounded-2xl shadow-card p-8 animate-slide-up" style={{ animationDelay: '0.1s' }}>
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Name Field */}
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-sm font-medium">
                   Nama Lengkap
@@ -152,7 +142,6 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Email Field */}
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-sm font-medium">
                   Email
@@ -173,7 +162,6 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Phone Field */}
               <div className="space-y-2">
                 <Label htmlFor="phone" className="text-sm font-medium">
                   Nomor Telepon
@@ -194,30 +182,6 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* WhatsApp Field */}
-              <div className="space-y-2">
-                <Label htmlFor="whatsapp" className="text-sm font-medium">
-                  WhatsApp <span className="text-muted-foreground font-normal">(opsional)</span>
-                </Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-                  <Input
-                    id="whatsapp"
-                    name="whatsapp"
-                    type="tel"
-                    placeholder="081234567890 (default: sama dengan telepon)"
-                    value={formData.whatsapp}
-                    onChange={handleChange}
-                    className="pl-10 h-11"
-                    disabled={isLoading}
-                  />
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Akan otomatis menggunakan nomor telepon jika kosong
-                </p>
-              </div>
-
-              {/* Password Field */}
               <div className="space-y-2">
                 <Label htmlFor="password" className="text-sm font-medium">
                   Password
@@ -238,7 +202,6 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Confirm Password Field */}
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword" className="text-sm font-medium">
                   Konfirmasi Password
@@ -259,7 +222,6 @@ export default function Register() {
                 </div>
               </div>
 
-              {/* Error Message */}
               {error && (
                 <div className="flex items-center gap-2 p-3 bg-destructive/10 border border-destructive/20 rounded-lg text-sm text-destructive animate-slide-up">
                   <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -267,7 +229,6 @@ export default function Register() {
                 </div>
               )}
 
-              {/* Success Message */}
               {success && (
                 <div className="flex items-center gap-2 p-3 bg-accent/10 border border-accent/20 rounded-lg text-sm text-accent animate-slide-up">
                   <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
@@ -275,7 +236,6 @@ export default function Register() {
                 </div>
               )}
 
-              {/* Submit Button */}
               <Button
                 type="submit"
                 className="w-full h-11 text-base font-semibold"
@@ -292,7 +252,6 @@ export default function Register() {
               </Button>
             </form>
 
-            {/* Divider */}
             <div className="relative my-6">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-border"></div>
@@ -302,7 +261,6 @@ export default function Register() {
               </div>
             </div>
 
-            {/* Login Link */}
             <div className="text-center">
               <p className="text-sm text-muted-foreground">
                 Sudah punya akun?{" "}
@@ -316,7 +274,6 @@ export default function Register() {
             </div>
           </div>
 
-          {/* Additional Info */}
           <p className="text-center text-sm text-muted-foreground mt-6">
             Dengan mendaftar, Anda menyetujui{" "}
             <Link to="/terms" className="text-primary hover:underline">

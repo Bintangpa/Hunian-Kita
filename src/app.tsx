@@ -17,7 +17,7 @@ import GuestHouse from "./pages/GuestHouse";
 import Villa from "./pages/Villa";
 import EditProperty from './pages/mitra/EditProperty';
 import AdminSettings from './pages/admin/AdminSettings';
-
+import MitraSettings from './pages/mitra/MitraSettings';
 
 
 
@@ -39,7 +39,7 @@ const App = () => (
           <Route path="/account" element={<Index />} />
           <Route path="/pasang-iklan" element={<PasangIklan />} />
           <Route path="/property/:id" element={<PropertyDetail />} />
-          
+          <Route path="/mitra/settings" element={<MitraSettings />} />
           {/* Route untuk halaman Kost, Guest House, dan Villa */}
           <Route path="/kost" element={<Kost />} />
           <Route path="/guesthouse" element={<GuestHouse />} />
