@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Building2, LogOut, Upload, ArrowLeft } from 'lucide-react';
+import { Building2, LogOut, Upload, ArrowLeft, Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 
@@ -40,7 +40,7 @@ export default function EditProperty() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
- 
+  const [displayWhatsApp, setDisplayWhatsApp] = useState('');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -54,33 +54,52 @@ export default function EditProperty() {
     facilities: [] as string[],
     images: [] as File[],
     owner_name: '',
-    owner_whatsapp: '',
+    
     bedrooms: '1',
     bathrooms: '1',
     area: '',
   });
 
   useEffect(() => {
-    const userData = localStorage.getItem('user');
-    
-    if (!userData) {
-      navigate('/login');
-      return;
-    }
-    
-    const parsedUser = JSON.parse(userData);
-    
-    if (parsedUser.role !== 'mitra') {
-      navigate('/');
-      return;
-    }
-    
-    setUser(parsedUser);
-    fetchPropertyData();
-    
-  }, [navigate, id]);
+  const userData = localStorage.getItem('user');
+  
+  if (!userData) {
+    navigate('/login');
+    return;
+  }
+  
+  const parsedUser = JSON.parse(userData);
+  
+  if (parsedUser.role !== 'mitra') {
+    navigate('/');
+    return;
+  }
+  
+  setUser(parsedUser);
+  
+  // ✅ FETCH USER LENGKAP DARI API
+  fetchFullUserData(parsedUser.id);
+  fetchPropertyData();
+  
+}, [navigate, id]);
 
   
+
+const fetchFullUserData = async (userId: number) => {
+  try {
+    const response = await fetch(`http://localhost:3000/api/users/${userId}`);
+    if (response.ok) {
+      const fullUserData = await response.json();
+      const whatsappNumber = fullUserData.whatsapp || fullUserData.phone || '';
+      setDisplayWhatsApp(whatsappNumber);
+      console.log('✅ WhatsApp loaded:', whatsappNumber);
+    }
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+  }
+};
+
+
   // Fungsi untuk normalisasi tipe properti dari database
   const normalizePropertyType = (type: string): string => {
     if (!type) return 'kost';
@@ -121,7 +140,7 @@ export default function EditProperty() {
           facilities: data.facilities || [],
           images: [],
           owner_name: data.ownerName || '',
-          owner_whatsapp: data.whatsappNumber || '',
+          
           bedrooms: data.bedrooms?.toString() || '1',
           bathrooms: data.bathrooms?.toString() || '1',
           area: data.area?.toString() || '',
@@ -177,7 +196,7 @@ export default function EditProperty() {
       uploadData.append('description', formData.description);
       uploadData.append('facilities', JSON.stringify(formData.facilities));
       uploadData.append('owner_name', formData.owner_name);
-      uploadData.append('owner_whatsapp', formData.owner_whatsapp);
+      uploadData.append('owner_whatsapp', displayWhatsApp);
       uploadData.append('bedrooms', formData.bedrooms);
       uploadData.append('bathrooms', formData.bathrooms);
       uploadData.append('area', formData.area || '0');
@@ -422,15 +441,21 @@ export default function EditProperty() {
               </div>
 
               <div>
-                <Label htmlFor="owner_whatsapp">Nomor WhatsApp *</Label>
-                <Input
-                  id="owner_whatsapp"
-                  value={formData.owner_whatsapp}
-                  onChange={(e) => setFormData(prev => ({ ...prev, owner_whatsapp: e.target.value }))}
-                  placeholder="628123456789"
-                  required
-                />
-              </div>
+  <Label htmlFor="owner_whatsapp">Nomor WhatsApp *</Label>
+  <div className="relative">
+    <Input
+      id="owner_whatsapp"
+      value={displayWhatsApp}
+      readOnly
+      disabled
+      className="bg-muted cursor-not-allowed pl-10"
+    />
+    <Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+  </div>
+  <p className="text-xs text-muted-foreground mt-1">
+    Nomor WhatsApp dari akun Anda (tidak dapat diubah)
+  </p>
+</div>
 
               <div className="md:col-span-2">
                 <Label htmlFor="description">Deskripsi</Label>

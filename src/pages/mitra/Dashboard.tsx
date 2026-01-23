@@ -34,7 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, Coins,Settings } from 'lucide-react';
+import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, Coins,Settings,Phone } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
@@ -136,7 +136,7 @@ export default function MitraDashboard() {
   const [userTokens, setUserTokens] = useState<number>(0);
   const [loadingTokens, setLoadingTokens] = useState(false);
 
-
+  const [displayWhatsApp, setDisplayWhatsApp] = useState('');
   const [formData, setFormData] = useState({
     title: '',
     type: '',
@@ -200,6 +200,11 @@ useEffect(() => {
       
       setUser(fullUserData);
       
+      // ✅ SET WHATSAPP LANGSUNG DI SINI KONTOL!
+      const whatsappNumber = fullUserData.whatsapp || fullUserData.phone || '';
+      setDisplayWhatsApp(whatsappNumber);
+      console.log('🔥 WHATSAPP SET:', whatsappNumber);
+      
       // Fetch data lainnya setelah user data ready
       fetchUserTokens(parsedUser.id);
       fetchProperties(parsedUser.id);
@@ -208,6 +213,11 @@ useEffect(() => {
       console.error('❌ ERROR FETCH USER:', error);
       // Fallback ke localStorage jika API gagal
       setUser(parsedUser);
+      
+      // ✅ SET WHATSAPP DARI LOCALSTORAGE JUGA!
+      const whatsappNumber = parsedUser.whatsapp || parsedUser.phone || '';
+      setDisplayWhatsApp(whatsappNumber);
+      
       fetchUserTokens(parsedUser.id);
       fetchProperties(parsedUser.id);
       fetchIndonesiaCities();
@@ -216,6 +226,8 @@ useEffect(() => {
   
   loadUserData();
 }, [navigate]);
+
+
 
 
 
@@ -444,13 +456,13 @@ const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setImagePreviews(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!user) return;
+ 
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  
+  if (!user) return;
 
-
-// ✅ TAMBAH VALIDASI TOKEN DI SINI (SEBELUM validasi field)
+  // ✅ Validasi token
   if (userTokens < 15) {
     toast({
       title: 'Token Tidak Cukup! 🪙',
@@ -460,9 +472,22 @@ const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     return;
   }
 
-    
+  // ✅ VALIDASI WHATSAPP PAKE displayWhatsApp KONTOL!
+  if (!displayWhatsApp) {
+    toast({
+      title: 'Nomor WhatsApp Tidak Tersedia',
+      description: 'Silakan hubungi administrator untuk mengatur nomor WhatsApp Anda.',
+      variant: 'destructive',
+    });
+    return;
+  }
+
+
+
+
+
 // Validasi field wajib
-if (!formData.title || !formData.type || !formData.city || !formData.address || !formData.price || !formData.owner_name || !formData.owner_whatsapp ) {
+if (!formData.title || !formData.type || !formData.city || !formData.address || !formData.price || !formData.owner_name  ) {
   toast({
     title: 'Error',
     description: 'Mohon lengkapi semua field yang wajib diisi',
@@ -512,7 +537,7 @@ if (totalSize > maxSize) {
       uploadData.append('owner_name', formData.owner_name);
       
      
-      uploadData.append('owner_whatsapp', user?.whatsapp || user?.phone || '');
+     uploadData.append('owner_whatsapp', displayWhatsApp);
       uploadData.append('bedrooms', formData.bedrooms);
       uploadData.append('bathrooms', formData.bathrooms);
       uploadData.append('area', formData.area || '0');
@@ -1091,21 +1116,24 @@ console.log('🔍 USER DATA DI FORM:', user);
               </div>
 
    
-<div>
-  <Label htmlFor="owner_whatsapp">
-    Nomor WhatsApp <span className="text-destructive">*</span>
-  </Label>
-  <Input
-    id="owner_whatsapp"
-    value={user?.whatsapp || user?.phone || 'Nomor tidak tersedia'}
-    readOnly
-    disabled
-    className="bg-muted cursor-not-allowed"
-  />
-  <p className="text-xs text-muted-foreground mt-1">
-    📱 Nomor WhatsApp dari akun Anda (tidak dapat diubah)
-  </p>
-</div>
+          <div>
+            <Label htmlFor="owner_whatsapp">
+              Nomor WhatsApp <span className="text-destructive">*</span>
+            </Label>
+              <div className="relative">
+                <Input
+                    id="owner_whatsapp"
+                    value={displayWhatsApp}
+                    readOnly
+                    disabled
+                    className="bg-muted cursor-not-allowed pl-10"
+                />
+                    <Phone className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Anda tidak dapat mengubah nomor WhatsApp anda
+                  </p>
+            </div>
 
 
             <div>
