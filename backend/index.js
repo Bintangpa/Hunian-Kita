@@ -64,89 +64,226 @@ db.connect((err) => {
   console.log('✅ MySQL Connected!');
 });
 
-// ========== API GET ALL PROPERTIES (PUBLIC) ==========
-app.get('/api/rumah', (req, res) => {
-  const sql = `
-    SELECT 
-      p.id,
-      p.title as nama,
-      LOWER(p.type) as type,  
-      p.address as alamat,
-      COALESCE(ct.name, 'Jakarta') as city,
-      TRIM(SUBSTRING_INDEX(p.address, ',', 1)) as district,
-      p.price as harga,
-      COALESCE(p.price_unit, 'bulan') as priceUnit,
-      COALESCE(p.description, '') as description,
-      COALESCE(p.facilities, '[]') as facilities,
-      COALESCE(p.image, '') as image,
-      COALESCE(p.owner_name, 'Pemilik Properti') as ownerName,
-      COALESCE(p.owner_whatsapp, '628123456789') as whatsappNumber,
-      COALESCE(p.bedrooms, 1) as bedrooms,
-      COALESCE(p.bathrooms, 1) as bathrooms,
-      COALESCE(p.area, 20) as area,
-      COALESCE(p.is_featured, 0) as isSponsored,
-      COALESCE(p.views, 0) as views,
-      COALESCE(p.whatsapp_clicks, 0) as whatsappClicks,
-      p.created_at as createdAt
-    FROM properties p
-    LEFT JOIN categories c ON p.category_id = c.id
-    LEFT JOIN cities ct ON p.city_id = ct.id
-    WHERE p.status = 'available'
-    ORDER BY p.created_at DESC
-  `;
-  
-  db.query(sql, (err, results) => {
-    if (err) {
-      console.error('Query error:', err);
-      return res.status(500).json({ error: 'Database error' });
+// ========== âœ… API UPLOAD PROPERTY (DENGAN VALIDASI TOKEN) ==========
+app.post('/api/properties', upload.array('images', 5), (req, res) => {
+  console.log('📤 Upload property request');
+  console.log('Body:', req.body);
+  console.log('Files:', req.files?.length || 0, 'images');
+
+  try {
+    const {
+      title, type, city, address, price, price_unit, description,
+      facilities, owner_name, owner_whatsapp, bedrooms, bathrooms,
+      area, user_id, category_id, city_id
+    } = req.body;
+
+    // Validasi
+    if (!title || !type || !address || !price || !owner_name || !owner_whatsapp || !user_id) {
+      return res.status(400).json({
+        success: false,
+        message: 'Field wajib tidak lengkap'
+      });
     }
+
+    // ✅ CEK TOKEN USER SEBELUM UPLOAD
+    const checkTokenSql = 'SELECT tokens, role FROM users WHERE id = ?';
     
-    const formattedResults = results.map(row => {
-      let facilities = [];
-      if (row.facilities) {
-        try {
-          facilities = JSON.parse(row.facilities);
-        } catch (e) {
-          facilities = [];
-        }
+    db.query(checkTokenSql, [user_id], (err, userResults) => {
+      if (err) {
+        console.error('❌ Error checking tokens:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Terjadi kesalahan saat mengecek token'
+        });
       }
       
-      let images = [];
-      if (row.image) {
-        try {
-          images = JSON.parse(row.image);
-        } catch (e) {
-          images = [row.image];
-        }
+      if (userResults.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User tidak ditemukan'
+        });
       }
       
-      return {
-        id: row.id,
-        nama: row.nama,
-        type: row.type,
-        alamat: row.alamat,
-        city: row.city,
-        district: row.district,
-        harga: parseFloat(row.harga) || 0,
-        priceUnit: row.priceUnit,
-        description: row.description,
-        facilities: facilities,
-        images: images,
-        ownerName: row.ownerName,
-        whatsappNumber: row.whatsappNumber,
-        bedrooms: row.bedrooms,
-        bathrooms: row.bathrooms,
-        area: row.area,
-        isSponsored: row.isSponsored === 1,
-        views: row.views,
-        whatsappClicks: row.whatsappClicks,
-        createdAt: row.createdAt
+      const userTokens = userResults[0].tokens;
+      const userRole = userResults[0].role;
+      
+      // ✅ VALIDASI TOKEN (HANYA UNTUK MITRA)
+      if (userRole === 'mitra' && userTokens < 15) {
+        return res.status(403).json({
+          success: false,
+          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan 15 token untuk upload properti.`
+        });
+      }
+      
+      // ✅ VALIDASI FOTO WAJIB ADA
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Minimal 1 foto harus diupload'
+        });
+      }
+
+      // ✅ PROSES UPLOAD FOTO
+      let imagePaths = [];
+      if (req.files && req.files.length > 0) {
+        imagePaths = req.files.map(file => `/uploads/${file.filename}`);
+      }
+
+      let facilitiesArray = [];
+      if (facilities) {
+        try {
+          facilitiesArray = typeof facilities === 'string' 
+            ? JSON.parse(facilities) 
+            : facilities;
+        } catch (e) {
+          facilitiesArray = [];
+        }
+      }
+
+      let finalCategoryId = category_id;
+      if (!finalCategoryId) {
+        const typeMap = { 'kost': 1, 'guesthouse': 2, 'villa': 3 };
+        finalCategoryId = typeMap[type.toLowerCase()] || 1;
+      }
+
+      const insertProperty = (finalCityId) => {
+        const facilitiesJson = JSON.stringify(facilitiesArray);
+
+        // ✅ STEP 1: INSERT PROPERTI (TANPA KOLOM IMAGE)
+        const sql = `
+          INSERT INTO properties (
+            user_id, title, type, category_id, city_id, address, price, price_unit,
+            description, facilities, owner_name, owner_whatsapp, 
+            bedrooms, bathrooms, area, status, views, whatsapp_clicks, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
+        `;
+
+        const values = [
+          user_id, title, type.toLowerCase(), finalCategoryId, finalCityId,
+          address, parseFloat(price), price_unit || 'bulan', description || '',
+          facilitiesJson, owner_name, owner_whatsapp,
+          parseInt(bedrooms) || 1, parseInt(bathrooms) || 1, parseFloat(area) || 0
+        ];
+
+        db.query(sql, values, (err, result) => {
+          if (err) {
+            console.error('❌ Insert property error:', err);
+            return res.status(500).json({
+              success: false,
+              message: 'Gagal menyimpan properti',
+              error: err.message
+            });
+          }
+
+          const propertyId = result.insertId;
+
+          // ✅ STEP 2: INSERT SEMUA FOTO KE TABEL IMAGES
+          const imageInserts = imagePaths.map((path, index) => {
+            return new Promise((resolve, reject) => {
+              const insertImageSql = `
+                INSERT INTO images (property_id, image_path, is_primary, display_order, created_at)
+                VALUES (?, ?, ?, ?, NOW())
+              `;
+              const isPrimary = index === 0 ? 1 : 0; // Foto pertama jadi primary
+              const displayOrder = index + 1;
+
+              db.query(insertImageSql, [propertyId, path, isPrimary, displayOrder], (err) => {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
+          });
+
+          // ✅ JALANKAN SEMUA INSERT FOTO
+          Promise.all(imageInserts)
+            .then(() => {
+              // ✅ KURANGI TOKEN SETELAH BERHASIL UPLOAD (HANYA UNTUK MITRA)
+              if (userRole === 'mitra') {
+                const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
+                db.query(updateTokenSql, [user_id], (err) => {
+                  if (err) {
+                    console.error('❌ Error updating tokens:', err);
+                  } else {
+                    console.log(`✅ Token reduced: User ${user_id} now has ${userTokens - 15} tokens`);
+                  }
+                });
+              }
+
+              console.log(`✅ Property uploaded! ID: ${propertyId}, Images: ${imagePaths.length}`);
+              res.json({
+                success: true,
+                message: 'Properti berhasil diupload! Token Anda dikurangi 15.',
+                propertyId: propertyId,
+                remainingTokens: userRole === 'mitra' ? userTokens - 15 : null
+              });
+            })
+            .catch(err => {
+              console.error('❌ Error inserting images:', err);
+              res.status(500).json({
+                success: false,
+                message: 'Properti tersimpan tapi gagal menyimpan foto',
+                error: err.message
+              });
+            });
+        });
       };
+
+      // Logic untuk city_id (sama seperti sebelumnya)
+      let finalCityId = city_id;
+      if (!finalCityId && city) {
+        const checkCitySql = 'SELECT id FROM cities WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?)';
+        const citySlug = city.toLowerCase().replace(/\s+/g, '-');
+        
+        db.query(checkCitySql, [city, citySlug], (err, cityResults) => {
+          if (err) {
+            console.error('❌ Error checking city:', err);
+            return res.status(500).json({
+              success: false,
+              message: 'Gagal mengecek data kota',
+              error: err.message
+            });
+          }
+          
+          if (cityResults.length > 0) {
+            finalCityId = cityResults[0].id;
+            console.log('✅ City found:', city, 'with ID:', finalCityId);
+            insertProperty(finalCityId);
+          } else {
+            const insertCitySql = 'INSERT INTO cities (name, slug) VALUES (?, ?)';
+            db.query(insertCitySql, [city, citySlug], (err, cityInsertResult) => {
+              if (err) {
+                console.error('❌ Error inserting city:', err);
+                return res.status(500).json({
+                  success: false,
+                  message: 'Gagal menambahkan kota baru',
+                  error: err.message
+                });
+              }
+              
+              console.log('✅ City added:', city, 'with ID:', cityInsertResult.insertId);
+              finalCityId = cityInsertResult.insertId;
+              insertProperty(finalCityId);
+            });
+          }
+        });
+      } else if (finalCityId) {
+        insertProperty(finalCityId);
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Kota harus diisi'
+        });
+      }
     });
-    
-    console.log(`✅ Fetched ${formattedResults.length} properties`);
-    res.json(formattedResults);
-  });
+
+  } catch (error) {
+    console.error('❌ Upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Terjadi kesalahan',
+      error: error.message
+    });
+  }
 });
 
 // ========== API GET PROPERTY BY ID (DETAIL) ==========
@@ -165,7 +302,6 @@ app.get('/api/rumah/:id', (req, res) => {
       COALESCE(p.price_unit, 'bulan') as priceUnit,
       COALESCE(p.description, '') as description,
       COALESCE(p.facilities, '[]') as facilities,
-      COALESCE(p.image, '[]') as images,
       COALESCE(p.owner_name, 'Pemilik Properti') as ownerName,
       COALESCE(p.owner_whatsapp, '628123456789') as whatsappNumber,
       COALESCE(p.bedrooms, 1) as bedrooms,
@@ -196,72 +332,61 @@ app.get('/api/rumah/:id', (req, res) => {
     
     const row = results[0];
     
-    let facilities = [];
-    if (row.facilities) {
-      try {
-        facilities = JSON.parse(row.facilities);
-      } catch (e) {
-        facilities = [];
+    // ✅ AMBIL SEMUA FOTO DARI TABEL IMAGES
+    const imagesSql = `
+      SELECT image_path, is_primary, display_order 
+      FROM images 
+      WHERE property_id = ? 
+      ORDER BY is_primary DESC, display_order ASC
+    `;
+    
+    db.query(imagesSql, [id], (err, imagesResults) => {
+      if (err) {
+        console.error('Error fetching images:', err);
+        return res.status(500).json({ error: 'Database error' });
       }
-    }
-    
-    let images = [];
-    if (row.images) {
-      try {
-        images = JSON.parse(row.images);
-      } catch (e) {
-        images = [row.images];
+      
+      const images = imagesResults.map(img => img.image_path);
+      
+      let facilities = [];
+      if (row.facilities) {
+        try {
+          facilities = JSON.parse(row.facilities);
+        } catch (e) {
+          facilities = [];
+        }
       }
-    }
-    
-    const property = {
-      id: row.id,
-      nama: row.nama,
-      type: row.type,
-      alamat: row.alamat,
-      city: row.city,
-      district: row.district,
-      harga: parseFloat(row.harga) || 0,
-      priceUnit: row.priceUnit,
-      description: row.description,
-      facilities: facilities,
-      images: images,
-      ownerName: row.ownerName,
-      whatsappNumber: row.whatsappNumber,
-      bedrooms: row.bedrooms,
-      bathrooms: row.bathrooms,
-      area: row.area,
-      isSponsored: row.isSponsored === 1,
-      views: row.views,
-      whatsappClicks: row.whatsappClicks,
-      createdAt: row.createdAt,
-      uploaderName: row.uploaderName || '',
-      uploaderRole: row.uploaderRole || ''
-    };
-    
-    console.log('✅ Property detail fetched:', property.nama);
-    res.json(property);
+      
+      const property = {
+        id: row.id,
+        nama: row.nama,
+        type: row.type,
+        alamat: row.alamat,
+        city: row.city,
+        district: row.district,
+        harga: parseFloat(row.harga) || 0,
+        priceUnit: row.priceUnit,
+        description: row.description,
+        facilities: facilities,
+        images: images, // ✅ DARI TABEL IMAGES
+        ownerName: row.ownerName,
+        whatsappNumber: row.whatsappNumber,
+        bedrooms: row.bedrooms,
+        bathrooms: row.bathrooms,
+        area: row.area,
+        isSponsored: row.isSponsored === 1,
+        views: row.views,
+        whatsappClicks: row.whatsappClicks,
+        createdAt: row.createdAt,
+        uploaderName: row.uploaderName || '',
+        uploaderRole: row.uploaderRole || ''
+      };
+      
+      console.log('✅ Property detail fetched:', property.nama);
+      res.json(property);
+    });
   });
 });
-
-
-// Endpoint untuk ambil semua cities
-app.get('/api/cities', (req, res) => {
-  const query = 'SELECT id, name, slug FROM cities ORDER BY name ASC';
-  
-  db.query(query, (err, results) => {
-    if (err) {
-      console.error('Error fetching cities:', err);
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Error fetching cities' 
-      });
-    }
-    
-    res.json(results);
-  });
-});
-
 
 
 // ========== API LOGIN (Updated with tokens) ==========
@@ -330,7 +455,7 @@ app.post('/api/login', async (req, res) => {
   });
 });
 
-// ========== ✅ API UPLOAD PROPERTY (DENGAN VALIDASI TOKEN) ==========
+// ========== âœ… API UPLOAD PROPERTY (DENGAN VALIDASI TOKEN) ==========
 app.post('/api/properties', upload.array('images', 5), (req, res) => {
   console.log('📤 Upload property request');
   console.log('Body:', req.body);
@@ -338,22 +463,9 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
 
   try {
     const {
-      title,
-      type,
-      city,
-      address,
-      price,
-      price_unit,
-      description,
-      facilities,
-      owner_name,
-      owner_whatsapp,
-      bedrooms,
-      bathrooms,
-      area,
-      user_id,
-      category_id,
-      city_id
+      title, type, city, address, price, price_unit, description,
+      facilities, owner_name, owner_whatsapp, bedrooms, bathrooms,
+      area, user_id, category_id, city_id
     } = req.body;
 
     // Validasi
@@ -394,7 +506,15 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
         });
       }
       
-      // Proses upload seperti biasa...
+      // ✅ VALIDASI FOTO WAJIB ADA
+      if (!req.files || req.files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Minimal 1 foto harus diupload'
+        });
+      }
+
+      // ✅ PROSES UPLOAD FOTO
       let imagePaths = [];
       if (req.files && req.files.length > 0) {
         imagePaths = req.files.map(file => `/uploads/${file.filename}`);
@@ -418,40 +538,27 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
       }
 
       const insertProperty = (finalCityId) => {
-        const mainImage = imagePaths.length > 0 ? imagePaths[0] : '';
-        const allImagesJson = JSON.stringify(imagePaths);
         const facilitiesJson = JSON.stringify(facilitiesArray);
 
+        // ✅ STEP 1: INSERT PROPERTI (TANPA KOLOM IMAGE)
         const sql = `
           INSERT INTO properties (
             user_id, title, type, category_id, city_id, address, price, price_unit,
-            description, facilities, image, owner_name, owner_whatsapp, 
+            description, facilities, owner_name, owner_whatsapp, 
             bedrooms, bathrooms, area, status, views, whatsapp_clicks, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
         `;
 
         const values = [
-          user_id,
-          title,
-          type.toLowerCase(),
-          finalCategoryId,
-          finalCityId,
-          address,
-          parseFloat(price),
-          price_unit || 'bulan',
-          description || '',
-          facilitiesJson,
-          allImagesJson,
-          owner_name,
-          owner_whatsapp,
-          parseInt(bedrooms) || 1,
-          parseInt(bathrooms) || 1,
-          parseFloat(area) || 0
+          user_id, title, type.toLowerCase(), finalCategoryId, finalCityId,
+          address, parseFloat(price), price_unit || 'bulan', description || '',
+          facilitiesJson, owner_name, owner_whatsapp,
+          parseInt(bedrooms) || 1, parseInt(bathrooms) || 1, parseFloat(area) || 0
         ];
 
         db.query(sql, values, (err, result) => {
           if (err) {
-            console.error('❌ Insert error:', err);
+            console.error('❌ Insert property error:', err);
             return res.status(500).json({
               success: false,
               message: 'Gagal menyimpan properti',
@@ -459,29 +566,60 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
             });
           }
 
-          // ✅ KURANGI TOKEN SETELAH BERHASIL UPLOAD (HANYA UNTUK MITRA)
-          if (userRole === 'mitra') {
-            const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
-            db.query(updateTokenSql, [user_id], (err) => {
-              if (err) {
-                console.error('❌ Error updating tokens:', err);
-              } else {
-                console.log(`✅ Token reduced: User ${user_id} now has ${userTokens - 15} tokens`);
-              }
-            });
-          }
+          const propertyId = result.insertId;
 
-          console.log('✅ Property uploaded! ID:', result.insertId);
-          res.json({
-            success: true,
-            message: 'Properti berhasil diupload! Token Anda dikurangi 15.',
-            propertyId: result.insertId,
-            remainingTokens: userRole === 'mitra' ? userTokens - 15 : null
+          // ✅ STEP 2: INSERT SEMUA FOTO KE TABEL IMAGES
+          const imageInserts = imagePaths.map((path, index) => {
+            return new Promise((resolve, reject) => {
+              const insertImageSql = `
+                INSERT INTO images (property_id, image_path, is_primary, display_order, created_at)
+                VALUES (?, ?, ?, ?, NOW())
+              `;
+              const isPrimary = index === 0 ? 1 : 0; // Foto pertama jadi primary
+              const displayOrder = index + 1;
+
+              db.query(insertImageSql, [propertyId, path, isPrimary, displayOrder], (err) => {
+                if (err) reject(err);
+                else resolve();
+              });
+            });
           });
+
+          // ✅ JALANKAN SEMUA INSERT FOTO
+          Promise.all(imageInserts)
+            .then(() => {
+              // ✅ KURANGI TOKEN SETELAH BERHASIL UPLOAD (HANYA UNTUK MITRA)
+              if (userRole === 'mitra') {
+                const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
+                db.query(updateTokenSql, [user_id], (err) => {
+                  if (err) {
+                    console.error('❌ Error updating tokens:', err);
+                  } else {
+                    console.log(`✅ Token reduced: User ${user_id} now has ${userTokens - 15} tokens`);
+                  }
+                });
+              }
+
+              console.log(`✅ Property uploaded! ID: ${propertyId}, Images: ${imagePaths.length}`);
+              res.json({
+                success: true,
+                message: 'Properti berhasil diupload! Token Anda dikurangi 15.',
+                propertyId: propertyId,
+                remainingTokens: userRole === 'mitra' ? userTokens - 15 : null
+              });
+            })
+            .catch(err => {
+              console.error('❌ Error inserting images:', err);
+              res.status(500).json({
+                success: false,
+                message: 'Properti tersimpan tapi gagal menyimpan foto',
+                error: err.message
+              });
+            });
         });
       };
 
-      // Logic untuk city_id (tetap sama seperti kode Anda yang sudah ada)
+      // Logic untuk city_id (sama seperti sebelumnya)
       let finalCityId = city_id;
       if (!finalCityId && city) {
         const checkCitySql = 'SELECT id FROM cities WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?)';
@@ -555,7 +693,6 @@ app.get('/api/properties/mitra/:userId', (req, res) => {
       COALESCE(p.price_unit, 'bulan') as priceUnit,
       COALESCE(p.description, '') as description,
       COALESCE(p.facilities, '[]') as facilities,
-      COALESCE(p.image, '[]') as images,
       COALESCE(p.owner_name, 'Pemilik Properti') as ownerName,
       COALESCE(p.owner_whatsapp, '628123456789') as whatsappNumber,
       COALESCE(p.bedrooms, 1) as bedrooms,
@@ -578,31 +715,56 @@ app.get('/api/properties/mitra/:userId', (req, res) => {
       return res.status(500).json({ error: 'Database error' });
     }
 
-    const formatted = results.map(row => {
-      let facilities = [];
-      try {
-        facilities = JSON.parse(row.facilities);
-      } catch (e) {
-        facilities = [];
-      }
+    if (results.length === 0) {
+      return res.json([]);
+    }
 
-      let images = [];
-      try {
-        images = JSON.parse(row.images);
-      } catch (e) {
-        images = [];
+    // ✅ AMBIL SEMUA FOTO UNTUK SETIAP PROPERTI
+    const propertyIds = results.map(r => r.id);
+    
+    const imagesSql = `
+      SELECT property_id, image_path, is_primary, display_order 
+      FROM images 
+      WHERE property_id IN (${propertyIds.join(',')})
+      ORDER BY is_primary DESC, display_order ASC
+    `;
+    
+    db.query(imagesSql, (err, imagesResults) => {
+      if (err) {
+        console.error('Error fetching images:', err);
+        return res.status(500).json({ error: 'Database error' });
       }
+      
+      // ✅ GROUP IMAGES BY PROPERTY_ID
+      const imagesMap = {};
+      imagesResults.forEach(img => {
+        if (!imagesMap[img.property_id]) {
+          imagesMap[img.property_id] = [];
+        }
+        imagesMap[img.property_id].push(img.image_path);
+      });
+      
+      const formatted = results.map(row => {
+        let facilities = [];
+        try {
+          facilities = JSON.parse(row.facilities);
+        } catch (e) {
+          facilities = [];
+        }
 
-      return {
-        ...row,
-        harga: parseFloat(row.harga) || 0,
-        facilities,
-        images
-      };
+        const images = imagesMap[row.id] || [];
+
+        return {
+          ...row,
+          harga: parseFloat(row.harga) || 0,
+          facilities,
+          images  // ✅ DARI TABEL IMAGES
+        };
+      });
+
+      console.log(`✅ Fetched ${formatted.length} properties for mitra ${userId}`);
+      res.json(formatted);
     });
-
-    console.log(`✅ Fetched ${formatted.length} properties for mitra ${userId}`);
-    res.json(formatted);
   });
 });
 
@@ -610,33 +772,29 @@ app.get('/api/properties/mitra/:userId', (req, res) => {
 app.delete('/api/properties/:id', (req, res) => {
   const { id } = req.params;
 
-  // Get property to delete image files
-  const selectSql = 'SELECT image FROM properties WHERE id = ?';
+  // ✅ AMBIL SEMUA FOTO DARI TABEL IMAGES
+  const selectImagesSql = 'SELECT image_path FROM images WHERE property_id = ?';
   
-  db.query(selectSql, [id], (err, results) => {
+  db.query(selectImagesSql, [id], (err, results) => {
     if (err) {
       return res.status(500).json({ success: false, message: 'Database error' });
     }
 
-    // Delete image files from disk
-    if (results.length > 0 && results[0].image) {
-      try {
-        const images = JSON.parse(results[0].image);
-        images.forEach(imagePath => {
-          if (imagePath.startsWith('/uploads/')) {
-            const filePath = path.join(__dirname, imagePath);
-            if (fs.existsSync(filePath)) {
-              fs.unlinkSync(filePath);
-              console.log('🗑️ Deleted file:', filePath);
-            }
+    // ✅ HAPUS FILE FOTO DARI DISK
+    if (results.length > 0) {
+      results.forEach(row => {
+        const imagePath = row.image_path;
+        if (imagePath.startsWith('/uploads/')) {
+          const filePath = path.join(__dirname, imagePath);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log('🗑️ Deleted file:', filePath);
           }
-        });
-      } catch (e) {
-        console.error('Error deleting files:', e);
-      }
+        }
+      });
     }
 
-    // Delete from database
+    // ✅ HAPUS DARI DATABASE (images akan terhapus otomatis karena CASCADE)
     const deleteSql = 'DELETE FROM properties WHERE id = ?';
     db.query(deleteSql, [id], (err, result) => {
       if (err) {
@@ -647,7 +805,7 @@ app.delete('/api/properties/:id', (req, res) => {
         return res.status(404).json({ success: false, message: 'Property not found' });
       }
 
-      console.log(`✅ Property ${id} deleted`);
+      console.log(`✅ Property ${id} and its images deleted`);
       res.json({ success: true, message: 'Properti berhasil dihapus' });
     });
   });
@@ -659,7 +817,7 @@ app.delete('/api/properties/:id', (req, res) => {
 app.put('/api/properties/:id', upload.array('images', 5), (req, res) => {
   const { id } = req.params;
   
-  console.log('🔄 Update property request for ID:', id);
+  console.log('📄 Update property request for ID:', id);
   console.log('Body:', req.body);
   console.log('Files:', req.files?.length || 0, 'new images');
 
@@ -689,10 +847,10 @@ app.put('/api/properties/:id', upload.array('images', 5), (req, res) => {
       });
     }
 
-    // Process uploaded images (kalau ada gambar baru)
-    let imagePaths = [];
+    // ✅ PROSES UPLOAD FOTO BARU (kalau ada)
+    let newImagePaths = [];
     if (req.files && req.files.length > 0) {
-      imagePaths = req.files.map(file => `/uploads/${file.filename}`);
+      newImagePaths = req.files.map(file => `/uploads/${file.filename}`);
     }
 
     // Parse facilities
@@ -716,63 +874,31 @@ app.put('/api/properties/:id', upload.array('images', 5), (req, res) => {
 
     const facilitiesJson = JSON.stringify(facilitiesArray);
 
-    // Build SQL UPDATE
-    let sql;
-    let values;
-
-    if (imagePaths.length > 0) {
-      // Ada gambar baru, update semua termasuk gambar
-      const allImagesJson = JSON.stringify(imagePaths);
-      sql = `
-        UPDATE properties 
-        SET title = ?, type = ?, category_id = ?, address = ?, price = ?, price_unit = ?,
-            description = ?, facilities = ?, image = ?, owner_name = ?, owner_whatsapp = ?,
-            bedrooms = ?, bathrooms = ?, area = ?
-        WHERE id = ?
-      `;
-      values = [
-        title,
-        type.toLowerCase(),
-        finalCategoryId,
-        address,
-        parseFloat(price),
-        price_unit || 'bulan',
-        description || '',
-        facilitiesJson,
-        allImagesJson,
-        owner_name,
-        owner_whatsapp,
-        parseInt(bedrooms) || 1,
-        parseInt(bathrooms) || 1,
-        parseFloat(area) || 0,
-        id
-      ];
-    } else {
-      // Tidak ada gambar baru, update tanpa gambar
-      sql = `
-        UPDATE properties 
-        SET title = ?, type = ?, category_id = ?, address = ?, price = ?, price_unit = ?,
-            description = ?, facilities = ?, owner_name = ?, owner_whatsapp = ?,
-            bedrooms = ?, bathrooms = ?, area = ?
-        WHERE id = ?
-      `;
-      values = [
-        title,
-        type.toLowerCase(),
-        finalCategoryId,
-        address,
-        parseFloat(price),
-        price_unit || 'bulan',
-        description || '',
-        facilitiesJson,
-        owner_name,
-        owner_whatsapp,
-        parseInt(bedrooms) || 1,
-        parseInt(bathrooms) || 1,
-        parseFloat(area) || 0,
-        id
-      ];
-    }
+    // ✅ UPDATE PROPERTY (TANPA KOLOM IMAGE)
+    const sql = `
+      UPDATE properties 
+      SET title = ?, type = ?, category_id = ?, address = ?, price = ?, price_unit = ?,
+          description = ?, facilities = ?, owner_name = ?, owner_whatsapp = ?,
+          bedrooms = ?, bathrooms = ?, area = ?
+      WHERE id = ?
+    `;
+    
+    const values = [
+      title,
+      type.toLowerCase(),
+      finalCategoryId,
+      address,
+      parseFloat(price),
+      price_unit || 'bulan',
+      description || '',
+      facilitiesJson,
+      owner_name,
+      owner_whatsapp,
+      parseInt(bedrooms) || 1,
+      parseInt(bathrooms) || 1,
+      parseFloat(area) || 0,
+      id
+    ];
 
     db.query(sql, values, (err, result) => {
       if (err) {
@@ -791,12 +917,80 @@ app.put('/api/properties/:id', upload.array('images', 5), (req, res) => {
         });
       }
 
-      console.log('✅ Property updated! ID:', id);
-      res.json({
-        success: true,
-        message: 'Properti berhasil diupdate',
-        propertyId: id
-      });
+      // ✅ JIKA ADA FOTO BARU, HAPUS FOTO LAMA & INSERT FOTO BARU
+      if (newImagePaths.length > 0) {
+        // STEP 1: Ambil foto lama untuk dihapus dari disk
+        const getOldImagesSql = 'SELECT image_path FROM images WHERE property_id = ?';
+        
+        db.query(getOldImagesSql, [id], (err, oldImages) => {
+          if (err) {
+            console.error('❌ Error getting old images:', err);
+          }
+          
+          // Hapus file lama dari disk
+          if (oldImages && oldImages.length > 0) {
+            oldImages.forEach(row => {
+              const filePath = path.join(__dirname, row.image_path);
+              if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log('🗑️ Deleted old file:', filePath);
+              }
+            });
+          }
+          
+          // STEP 2: Hapus semua foto lama dari database
+          const deleteOldImagesSql = 'DELETE FROM images WHERE property_id = ?';
+          
+          db.query(deleteOldImagesSql, [id], (err) => {
+            if (err) {
+              console.error('❌ Error deleting old images from DB:', err);
+            }
+            
+            // STEP 3: Insert foto baru ke database
+            const imageInserts = newImagePaths.map((path, index) => {
+              return new Promise((resolve, reject) => {
+                const insertImageSql = `
+                  INSERT INTO images (property_id, image_path, is_primary, display_order, created_at)
+                  VALUES (?, ?, ?, ?, NOW())
+                `;
+                const isPrimary = index === 0 ? 1 : 0;
+                const displayOrder = index + 1;
+
+                db.query(insertImageSql, [id, path, isPrimary, displayOrder], (err) => {
+                  if (err) reject(err);
+                  else resolve();
+                });
+              });
+            });
+
+            Promise.all(imageInserts)
+              .then(() => {
+                console.log(`✅ Property ${id} updated with ${newImagePaths.length} new images`);
+                res.json({
+                  success: true,
+                  message: 'Properti dan foto berhasil diupdate',
+                  propertyId: id
+                });
+              })
+              .catch(err => {
+                console.error('❌ Error inserting new images:', err);
+                res.json({
+                  success: true,
+                  message: 'Properti updated tapi ada error di foto',
+                  propertyId: id
+                });
+              });
+          });
+        });
+      } else {
+        // Tidak ada foto baru, hanya update data properti
+        console.log('✅ Property updated without new images! ID:', id);
+        res.json({
+          success: true,
+          message: 'Properti berhasil diupdate',
+          propertyId: id
+        });
+      }
     });
   } catch (error) {
     console.error('❌ Update error:', error);
@@ -807,7 +1001,6 @@ app.put('/api/properties/:id', upload.array('images', 5), (req, res) => {
     });
   }
 });
-
 
 // ========== API REGISTER ==========
 app.post('/api/register', async (req, res) => {
@@ -1602,6 +1795,113 @@ app.get('/api/users/:id', (req, res) => {
     
     console.log('✅ User data loaded:', results[0].email);
     res.json(results[0]);
+  });
+});
+
+
+// ========== API GET ALL PROPERTIES (UNTUK HALAMAN UTAMA) ==========
+app.get('/api/rumah', (req, res) => {
+  console.log('📋 Fetching all properties for homepage');
+  
+  const sql = `
+    SELECT 
+      p.id,
+      p.title as nama,
+      LOWER(p.type) as type,
+      p.address as alamat,
+      COALESCE(ct.name, 'Jakarta') as city,
+      TRIM(SUBSTRING_INDEX(p.address, ',', 1)) as district,
+      p.price as harga,
+      COALESCE(p.price_unit, 'bulan') as priceUnit,
+      COALESCE(p.description, '') as description,
+      COALESCE(p.facilities, '[]') as facilities,
+      COALESCE(p.owner_name, 'Pemilik Properti') as ownerName,
+      COALESCE(p.owner_whatsapp, '628123456789') as whatsappNumber,
+      COALESCE(p.bedrooms, 1) as bedrooms,
+      COALESCE(p.bathrooms, 1) as bathrooms,
+      COALESCE(p.area, 20) as area,
+      COALESCE(p.is_featured, 0) as isSponsored,
+      COALESCE(p.views, 0) as views,
+      COALESCE(p.whatsapp_clicks, 0) as whatsappClicks,
+      p.created_at as createdAt
+    FROM properties p
+    LEFT JOIN categories c ON p.category_id = c.id
+    LEFT JOIN cities ct ON p.city_id = ct.id
+    WHERE p.status = 'available'
+    ORDER BY p.is_featured DESC, p.created_at DESC
+  `;
+  
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error('❌ Error fetching properties:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (results.length === 0) {
+      console.log('⚠️ No properties found in database');
+      return res.json([]);
+    }
+    
+    const propertyIds = results.map(r => r.id);
+    
+    const imagesSql = `
+      SELECT property_id, image_path, is_primary, display_order 
+      FROM images 
+      WHERE property_id IN (${propertyIds.join(',')})
+      ORDER BY is_primary DESC, display_order ASC
+    `;
+    
+    db.query(imagesSql, (err, imagesResults) => {
+      if (err) {
+        console.error('❌ Error fetching images:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      const imagesMap = {};
+      imagesResults.forEach(img => {
+        if (!imagesMap[img.property_id]) {
+          imagesMap[img.property_id] = [];
+        }
+        imagesMap[img.property_id].push(img.image_path);
+      });
+      
+      const formatted = results.map(row => {
+        let facilities = [];
+        try {
+          facilities = JSON.parse(row.facilities);
+        } catch (e) {
+          facilities = [];
+        }
+        
+        const images = imagesMap[row.id] || [];
+        
+        return {
+          id: row.id,
+          nama: row.nama,
+          type: row.type,
+          alamat: row.alamat,
+          city: row.city,
+          district: row.district,
+          harga: parseFloat(row.harga) || 0,
+          priceUnit: row.priceUnit,
+          description: row.description,
+          facilities: facilities,
+          images: images,
+          ownerName: row.ownerName,
+          whatsappNumber: row.whatsappNumber,
+          bedrooms: row.bedrooms,
+          bathrooms: row.bathrooms,
+          area: row.area,
+          isSponsored: row.isSponsored === 1,
+          views: row.views,
+          whatsappClicks: row.whatsappClicks,
+          createdAt: row.createdAt
+        };
+      });
+      
+      console.log(`✅ Fetched ${formatted.length} properties with images`);
+      res.json(formatted);
+    });
   });
 });
 

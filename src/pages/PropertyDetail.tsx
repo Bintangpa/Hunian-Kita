@@ -85,14 +85,16 @@ export default function PropertyDetail() {
     }).format(priceValue);
   };
 
+  
   const handleWhatsAppClick = () => {
-    const message = encodeURIComponent(
-      `Halo ${ownerName}, saya tertarik dengan ${title} di ${cityName}. Apakah masih tersedia?`
-    );
-    if (ownerWhatsapp) {
-      window.open(`https://wa.me/${ownerWhatsapp}?text=${message}`, '_blank');
-    }
-  };
+  const propertyUrl = `${window.location.origin}/property/${id}`;
+  const message = encodeURIComponent(
+    `Halo ${ownerName}, saya tertarik dengan ${title} di ${cityName}. Apakah masih tersedia? ${propertyUrl}`
+  );
+  if (ownerWhatsapp) {
+    window.open(`https://wa.me/${ownerWhatsapp}?text=${message}`, '_blank');
+  }
+};
 
   // Parse facilities dari JSON string atau array
   let facilities = [];

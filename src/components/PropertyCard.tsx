@@ -104,17 +104,19 @@ export function PropertyCard({ property }: PropertyCardProps) {
     }).format(priceValue);
   };
 
+  
   const handleWhatsAppClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    const message = encodeURIComponent(
-      `Halo ${ownerName}, saya tertarik dengan ${title} di ${address}. Apakah masih tersedia?`
-    );
-    if (ownerWhatsapp) {
-      window.open(`https://wa.me/${ownerWhatsapp}?text=${message}`, '_blank');
-    }
-  };
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const propertyUrl = `${window.location.origin}/property/${property.id}`;
+  const message = encodeURIComponent(
+    `Halo ${ownerName}, saya tertarik dengan ${title} di ${address}. Apakah masih tersedia? ${propertyUrl}`
+  );
+  if (ownerWhatsapp) {
+    window.open(`https://wa.me/${ownerWhatsapp}?text=${message}`, '_blank');
+  }
+};
 
   const handleCardClick = () => {
     navigate(`/property/${property.id}`);
