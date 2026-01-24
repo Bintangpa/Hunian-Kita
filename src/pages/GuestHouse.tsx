@@ -4,12 +4,19 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { MobileNav } from '@/components/MobileNav';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, Building } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ArrowLeft, Building, Search } from 'lucide-react';
 
 export default function GuestHouse() {
   const navigate = useNavigate();
   const [properties, setProperties] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // State untuk filter dan search
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCity, setSelectedCity] = useState('all');
+  const [sortBy, setSortBy] = useState('default');
 
   useEffect(() => {
     fetch('http://localhost:3000/api/rumah')
@@ -27,6 +34,24 @@ export default function GuestHouse() {
         setLoading(false);
       });
   }, []);
+
+  // Ambil list kota unik
+  const cities = ['all', ...new Set(properties.map(p => p.city).filter(Boolean))];
+
+  // Filter dan sort properties
+  const filteredProperties = properties
+    .filter(property => {
+      const matchSearch = property.nama?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         property.city?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchCity = selectedCity === 'all' || property.city === selectedCity;
+      return matchSearch && matchCity;
+    })
+    .sort((a, b) => {
+      if (sortBy === 'price-low') return (a.harga || 0) - (b.harga || 0);
+      if (sortBy === 'price-high') return (b.harga || 0) - (a.harga || 0);
+      if (sortBy === 'name') return (a.nama || '').localeCompare(b.nama || '');
+      return 0;
+    });
 
   return (
     <div className="min-h-screen bg-background">
@@ -56,29 +81,81 @@ export default function GuestHouse() {
             </div>
             
             <div className="mt-6">
-              <p className="text-muted-foreground">
-                Menampilkan <span className="font-semibold text-foreground">{properties.length}</span> guest house
+              <p className="text-muted-foreground mb-4">
+                Menampilkan <span className="font-semibold text-foreground">{filteredProperties.length}</span> dari {properties.length} guest house
               </p>
+              
+              {/* Filter & Search */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {/* Search */}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Cari nama atau kota..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+
+                {/* Filter Kota */}
+                <Select value={selectedCity} onValueChange={setSelectedCity}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Semua Kota" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Kota</SelectItem>
+                    {cities.filter(c => c !== 'all').map(city => (
+                      <SelectItem key={city} value={city}>{city}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Sort */}
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Urutkan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Default</SelectItem>
+                    <SelectItem value="price-low">Harga Terendah</SelectItem>
+                    <SelectItem value="price-high">Harga Tertinggi</SelectItem>
+                    <SelectItem value="name">Nama A-Z</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </section>
 
         <main className="min-h-screen py-8 px-4">
           <div className="container mx-auto max-w-7xl">
-            {properties.length === 0 ? (
+            {filteredProperties.length === 0 ? (
               <div className="text-center py-16">
                 <Building className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                <h2 className="text-2xl font-bold mb-2">Belum Ada Guest House</h2>
+                <h2 className="text-2xl font-bold mb-2">
+                  {properties.length === 0 ? 'Belum Ada Guest House' : 'Tidak Ada Hasil'}
+                </h2>
                 <p className="text-muted-foreground mb-6">
-                  Saat ini belum ada guest house yang tersedia.
+                  {properties.length === 0 
+                    ? 'Saat ini belum ada guest house yang tersedia.'
+                    : 'Coba ubah filter atau kata kunci pencarian.'}
                 </p>
-                <Button onClick={() => navigate('/')}>
-                  Kembali ke Beranda
+                <Button onClick={() => {
+                  if (properties.length === 0) {
+                    navigate('/');
+                  } else {
+                    setSearchTerm('');
+                    setSelectedCity('all');
+                    setSortBy('default');
+                  }
+                }}>
+                  {properties.length === 0 ? 'Kembali ke Beranda' : 'Reset Filter'}
                 </Button>
               </div>
             ) : (
               <div className="space-y-3">
-                {properties.map((property) => (
+                {filteredProperties.map((property) => (
                   <div 
                     key={property.id}
                     className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
