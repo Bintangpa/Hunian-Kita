@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { MobileNav } from '@/components/MobileNav';
-import { PropertyCard } from '@/components/PropertyCard';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Building } from 'lucide-react';
 
@@ -64,25 +63,83 @@ export default function GuestHouse() {
           </div>
         </section>
 
-        <main className="min-h-screen container mx-auto py-8 px-4">
-          {properties.length === 0 ? (
-            <div className="text-center py-16">
-              <Building className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <h2 className="text-2xl font-bold mb-2">Belum Ada Guest House</h2>
-              <p className="text-muted-foreground mb-6">
-                Saat ini belum ada guest house yang tersedia.
-              </p>
-              <Button onClick={() => navigate('/')}>
-                Kembali ke Beranda
-              </Button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {properties.map((property) => (
-                <PropertyCard key={property.id} property={property} />
-              ))}
-            </div>
-          )}
+        <main className="min-h-screen py-8 px-4">
+          <div className="container mx-auto max-w-7xl">
+            {properties.length === 0 ? (
+              <div className="text-center py-16">
+                <Building className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                <h2 className="text-2xl font-bold mb-2">Belum Ada Guest House</h2>
+                <p className="text-muted-foreground mb-6">
+                  Saat ini belum ada guest house yang tersedia.
+                </p>
+                <Button onClick={() => navigate('/')}>
+                  Kembali ke Beranda
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {properties.map((property) => (
+                  <div 
+                    key={property.id}
+                    className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                    onClick={() => navigate(`/property/${property.id}`)}
+                  >
+                    <div className="flex gap-4 p-3">
+                      {/* Image - Pentok Kiri */}
+                      <div className="flex-shrink-0">
+                        <img
+                          src={
+                            property.images && property.images.length > 0 
+                              ? `http://localhost:3000${property.images[0]}`
+                              : 'https://placehold.co/140x100'
+                          }
+                          alt={property.nama}
+                          className="w-36 h-24 object-cover rounded"
+                          onError={(e) => {
+                            console.log('❌ Gagal load foto:', property.nama, property.images);
+                            e.currentTarget.src = 'https://placehold.co/140x100';
+                          }}
+                        />
+                      </div>
+
+                      {/* Content - Kanan */}
+                      <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
+                        <div className="space-y-1">
+                          <h3 className="text-lg font-bold line-clamp-1">{property.nama}</h3>
+                          <p className="text-sm text-muted-foreground line-clamp-1">
+                            {property.city}
+                          </p>
+                        </div>
+                        <div className="flex items-end justify-between gap-4">
+                          <div>
+                            <p className="text-xl font-bold text-primary leading-tight">
+                              Rp {property.harga?.toLocaleString('id-ID')}
+                            </p>
+                            <span className="text-xs text-muted-foreground">/ {property.priceUnit}</span>
+                          </div>
+                          
+                          <Button 
+                            size="sm" 
+                            className="h-8 px-4"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const propertyUrl = `${window.location.origin}/property/${property.id}`;
+                              const message = encodeURIComponent(
+                                `Halo ${property.ownerName || 'Pemilik'}, saya tertarik dengan ${property.nama} di ${property.city}. Apakah masih tersedia? ${propertyUrl}`
+                              );
+                              window.open(`https://wa.me/${property.whatsappNumber}?text=${message}`, '_blank');
+                            }}
+                          >
+                            Hubungi
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </main>
       </div>
 
