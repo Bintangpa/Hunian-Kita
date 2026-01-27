@@ -1573,7 +1573,7 @@ app.post('/api/admin/add-tokens', (req, res) => {
   }
   
   // Validasi token harus kelipatan 15
-  const validPackages = [15, 30, 75, 150, 330];
+  const validPackages = [15, 30, 75, 150, 330, 690];
   if (!validPackages.includes(tokens)) {
     return res.status(400).json({
       success: false,
@@ -1904,6 +1904,342 @@ app.get('/api/rumah', (req, res) => {
     });
   });
 });
+
+
+// ========== API GET SEMUA DATA HALAMAN PASANG IKLAN ==========
+app.get('/api/pasang-iklan/content', (req, res) => {
+  console.log('📄 Fetching Pasang Iklan page content');
+  
+  const queries = {
+    hero: 'SELECT * FROM pasang_iklan_hero WHERE is_active = 1 LIMIT 1',
+    steps: 'SELECT * FROM pasang_iklan_steps WHERE is_active = 1 ORDER BY display_order ASC',
+    plans: 'SELECT * FROM pasang_iklan_plans WHERE is_active = 1 ORDER BY display_order ASC',
+    tokenPackages: 'SELECT * FROM pasang_iklan_token_packages WHERE is_active = 1 ORDER BY display_order ASC',
+    cta: 'SELECT * FROM pasang_iklan_cta WHERE is_active = 1 LIMIT 1'
+  };
+  
+  const results = {};
+  let completed = 0;
+  
+  // Fetch Hero
+  db.query(queries.hero, (err, heroResults) => {
+    if (err) {
+      console.error('Error fetching hero:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    results.hero = heroResults[0] || null;
+    completed++;
+    
+    if (completed === 5) sendResponse();
+  });
+  
+  // Fetch Steps
+  db.query(queries.steps, (err, stepsResults) => {
+    if (err) {
+      console.error('Error fetching steps:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    results.steps = stepsResults;
+    completed++;
+    
+    if (completed === 5) sendResponse();
+  });
+  
+  // Fetch Plans + Features
+  db.query(queries.plans, (err, plansResults) => {
+    if (err) {
+      console.error('Error fetching plans:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (plansResults.length === 0) {
+      results.plans = [];
+      completed++;
+      if (completed === 5) sendResponse();
+      return;
+    }
+    
+    const planIds = plansResults.map(p => p.id);
+    const featuresSql = `SELECT * FROM pasang_iklan_plan_features WHERE plan_id IN (${planIds.join(',')}) ORDER BY display_order ASC`;
+    
+    db.query(featuresSql, (err, featuresResults) => {
+      if (err) {
+        console.error('Error fetching features:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+      
+      // Group features by plan_id
+      const featuresMap = {};
+      featuresResults.forEach(feature => {
+        if (!featuresMap[feature.plan_id]) {
+          featuresMap[feature.plan_id] = [];
+        }
+        featuresMap[feature.plan_id].push(feature.feature_text);
+      });
+      
+      // Attach features to plans
+      results.plans = plansResults.map(plan => ({
+        ...plan,
+        features: featuresMap[plan.id] || []
+      }));
+      
+      completed++;
+      if (completed === 5) sendResponse();
+    });
+  });
+  
+  // Fetch Token Packages
+  db.query(queries.tokenPackages, (err, packagesResults) => {
+    if (err) {
+      console.error('Error fetching token packages:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    results.tokenPackages = packagesResults;
+    completed++;
+    
+    if (completed === 5) sendResponse();
+  });
+  
+  // Fetch CTA
+  db.query(queries.cta, (err, ctaResults) => {
+    if (err) {
+      console.error('Error fetching cta:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    results.cta = ctaResults[0] || null;
+    completed++;
+    
+    if (completed === 5) sendResponse();
+  });
+  
+  function sendResponse() {
+    console.log('✅ Pasang Iklan content loaded');
+    res.json({
+      success: true,
+      data: results
+    });
+  }
+});
+
+// ========== API UPDATE HERO SECTION ==========
+app.put('/api/admin/pasang-iklan/hero', (req, res) => {
+  const { title, subtitle } = req.body;
+  
+  console.log('📝 Updating Pasang Iklan hero');
+  
+  const sql = 'UPDATE pasang_iklan_hero SET title = ?, subtitle = ? WHERE id = 1';
+  
+  db.query(sql, [title, subtitle], (err, result) => {
+    if (err) {
+      console.error('Error updating hero:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Hero updated');
+    res.json({ success: true, message: 'Hero berhasil diupdate' });
+  });
+});
+
+// ========== API UPDATE STEPS ==========
+app.put('/api/admin/pasang-iklan/steps/:id', (req, res) => {
+  const { id } = req.params;
+  const { step_number, title, description } = req.body;
+  
+  console.log('📝 Updating step:', id);
+  
+  const sql = 'UPDATE pasang_iklan_steps SET step_number = ?, title = ?, description = ? WHERE id = ?';
+  
+  db.query(sql, [step_number, title, description, id], (err, result) => {
+    if (err) {
+      console.error('Error updating step:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Step updated');
+    res.json({ success: true, message: 'Step berhasil diupdate' });
+  });
+});
+
+// ========== API ADD NEW STEP ==========
+app.post('/api/admin/pasang-iklan/steps', (req, res) => {
+  const { step_number, title, description, display_order } = req.body;
+  
+  console.log('➕ Adding new step');
+  
+  const sql = 'INSERT INTO pasang_iklan_steps (step_number, title, description, display_order) VALUES (?, ?, ?, ?)';
+  
+  db.query(sql, [step_number, title, description, display_order || 999], (err, result) => {
+    if (err) {
+      console.error('Error adding step:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Step added');
+    res.json({ success: true, message: 'Step berhasil ditambahkan', id: result.insertId });
+  });
+});
+
+// ========== API DELETE STEP ==========
+app.delete('/api/admin/pasang-iklan/steps/:id', (req, res) => {
+  const { id } = req.params;
+  
+  console.log('🗑️ Deleting step:', id);
+  
+  const sql = 'DELETE FROM pasang_iklan_steps WHERE id = ?';
+  
+  db.query(sql, [id], (err, result) => {
+    if (err) {
+      console.error('Error deleting step:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Step deleted');
+    res.json({ success: true, message: 'Step berhasil dihapus' });
+  });
+});
+
+// ========== API UPDATE PLAN ==========
+app.put('/api/admin/pasang-iklan/plans/:id', (req, res) => {
+  const { id } = req.params;
+  const { name, price, period, description, icon, is_popular } = req.body;
+  
+  console.log('📝 Updating plan:', id);
+  
+  const sql = `UPDATE pasang_iklan_plans 
+               SET name = ?, price = ?, period = ?, description = ?, icon = ?, is_popular = ? 
+               WHERE id = ?`;
+  
+  db.query(sql, [name, price, period, description, icon, is_popular ? 1 : 0, id], (err, result) => {
+    if (err) {
+      console.error('Error updating plan:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Plan updated');
+    res.json({ success: true, message: 'Plan berhasil diupdate' });
+  });
+});
+
+// ========== API UPDATE PLAN FEATURES ==========
+app.put('/api/admin/pasang-iklan/plans/:id/features', (req, res) => {
+  const { id } = req.params;
+  const { features } = req.body; // Array of strings
+  
+  console.log('📝 Updating plan features for plan:', id);
+  
+  // Delete existing features
+  const deleteSql = 'DELETE FROM pasang_iklan_plan_features WHERE plan_id = ?';
+  
+  db.query(deleteSql, [id], (err) => {
+    if (err) {
+      console.error('Error deleting old features:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    if (!features || features.length === 0) {
+      return res.json({ success: true, message: 'Features berhasil diupdate' });
+    }
+    
+    // Insert new features
+    const insertValues = features.map((feature, index) => [id, feature, index + 1]);
+    const insertSql = 'INSERT INTO pasang_iklan_plan_features (plan_id, feature_text, display_order) VALUES ?';
+    
+    db.query(insertSql, [insertValues], (err) => {
+      if (err) {
+        console.error('Error inserting features:', err);
+        return res.status(500).json({ success: false, message: 'Database error' });
+      }
+      
+      console.log('✅ Plan features updated');
+      res.json({ success: true, message: 'Features berhasil diupdate' });
+    });
+  });
+});
+
+// ========== API UPDATE TOKEN PACKAGE ==========
+app.put('/api/admin/pasang-iklan/token-packages/:id', (req, res) => {
+  const { id } = req.params;
+  const { tokens, price, bonus } = req.body;
+  
+  console.log('📝 Updating token package:', id);
+  
+  const sql = 'UPDATE pasang_iklan_token_packages SET tokens = ?, price = ?, bonus = ? WHERE id = ?';
+  
+  db.query(sql, [tokens, price, bonus || 0, id], (err, result) => {
+    if (err) {
+      console.error('Error updating token package:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Token package updated');
+    res.json({ success: true, message: 'Token package berhasil diupdate' });
+  });
+});
+
+// ========== API ADD NEW TOKEN PACKAGE ==========
+app.post('/api/admin/pasang-iklan/token-packages', (req, res) => {
+  const { tokens, price, bonus, display_order } = req.body;
+  
+  console.log('➕ Adding new token package');
+  
+  const sql = 'INSERT INTO pasang_iklan_token_packages (tokens, price, bonus, display_order) VALUES (?, ?, ?, ?)';
+  
+  db.query(sql, [tokens, price, bonus || 0, display_order || 999], (err, result) => {
+    if (err) {
+      console.error('Error adding token package:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Token package added');
+    res.json({ success: true, message: 'Token package berhasil ditambahkan', id: result.insertId });
+  });
+});
+
+// ========== API DELETE TOKEN PACKAGE ==========
+app.delete('/api/admin/pasang-iklan/token-packages/:id', (req, res) => {
+  const { id } = req.params;
+  
+  console.log('🗑️ Deleting token package:', id);
+  
+  const sql = 'DELETE FROM pasang_iklan_token_packages WHERE id = ?';
+  
+  db.query(sql, [id], (err, result) => {
+    if (err) {
+      console.error('Error deleting token package:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ Token package deleted');
+    res.json({ success: true, message: 'Token package berhasil dihapus' });
+  });
+});
+
+// ========== API UPDATE CTA SECTION ==========
+app.put('/api/admin/pasang-iklan/cta', (req, res) => {
+  const { title, description, button_text, whatsapp_number, whatsapp_message } = req.body;
+  
+  console.log('📝 Updating CTA section');
+  
+  const sql = `UPDATE pasang_iklan_cta 
+               SET title = ?, description = ?, button_text = ?, whatsapp_number = ?, whatsapp_message = ? 
+               WHERE id = 1`;
+  
+  db.query(sql, [title, description, button_text, whatsapp_number, whatsapp_message], (err, result) => {
+    if (err) {
+      console.error('Error updating CTA:', err);
+      return res.status(500).json({ success: false, message: 'Database error' });
+    }
+    
+    console.log('✅ CTA updated');
+    res.json({ success: true, message: 'CTA berhasil diupdate' });
+  });
+});
+
+
+
+
+
+
 
 
 // Jalankan server

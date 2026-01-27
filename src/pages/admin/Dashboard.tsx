@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import AdminIsiToken from './AdminIsiToken'; 
+import PasangIklanSetting from './Pasangiklansetting';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -513,21 +514,7 @@ export default function AdminDashboard() {
         );
       
       case 'pasang-iklan':
-        return (
-          <Card>
-            <CardHeader>
-              <CardTitle>Pasang Iklan</CardTitle>
-              <CardDescription>Kelola iklan dan promosi di platform</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-12 text-muted-foreground">
-                <PlusCircle className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                <p className="text-lg font-medium mb-2">Fitur Pasang Iklan</p>
-                <p className="text-sm">Halaman ini sedang dalam pengembangan</p>
-              </div>
-            </CardContent>
-          </Card>
-        );
+        return <PasangIklanSetting />;
       
       case 'isi-token':
         return <AdminIsiToken />;
@@ -810,7 +797,7 @@ export default function AdminDashboard() {
             </h1>
             <p className="text-muted-foreground mt-1">
               {activePage === 'kelola-user' && 'Kelola seluruh user dan mitra'}
-              {activePage === 'pasang-iklan' && 'Kelola iklan dan promosi di platform'}
+              {activePage === 'pasang-iklan' && 'Kelola konten halaman Pasang Iklan'}
               {activePage === 'isi-token' && 'Kelola token dan saldo pengguna'}
             </p>
           </div>

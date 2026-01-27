@@ -21,6 +21,7 @@ const TOKEN_PACKAGES = [
   { value: 75, label: '75 Token', price: 'Rp 50.000' },
   { value: 150, label: '150 Token', price: 'Rp 100.000' },
   { value: 330, label: '330 Token', price: 'Rp 200.000' },
+  { value: 690, label: '690 Token', price: 'Rp 400.000' },
 ];
 
 export default function AdminIsiToken() {
