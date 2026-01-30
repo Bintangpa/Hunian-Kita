@@ -176,7 +176,7 @@ export function Header() {
                     variant="ghost" 
                     size="sm" 
                     onClick={handleDashboardClick}
-                    className="gap-2"
+                    className="gap-2 hover:bg-green-50 hover:text-green-600"
                   >
                     <User className="w-4 h-4" />
                     {user.name}
@@ -186,10 +186,10 @@ export function Header() {
                     variant="outline" 
                     size="sm" 
                     onClick={handleLogout}
-                    className="gap-2"
+                    className="gap-2 hover:bg-red-50 hover:text-red-600 hover:border-red-300"
                   >
                     <LogOut className="w-4 h-4" />
-                    Keluar
+                    Logout
                   </Button>
                 </>
               ) : (
@@ -279,7 +279,7 @@ export function Header() {
                       <Button 
                         variant="ghost" 
                         size="sm" 
-                        className="flex-1" 
+                        className="flex-1 hover:bg-green-50 hover:text-green-600" 
                         onClick={handleDashboardClick}
                       >
                         Dashboard
@@ -287,10 +287,10 @@ export function Header() {
                       <Button 
                         variant="outline" 
                         size="sm" 
-                        className="flex-1" 
+                        className="flex-1 hover:bg-red-50 hover:text-red-600 hover:border-red-300" 
                         onClick={handleLogout}
                       >
-                        Keluar
+                        Logout
                       </Button>
                     </>
                   ) : (

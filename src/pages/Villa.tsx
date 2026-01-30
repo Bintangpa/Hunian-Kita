@@ -6,7 +6,7 @@ import { MobileNav } from '@/components/MobileNav';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, TreePalm, Search } from 'lucide-react';
+import { ArrowLeft, TreePalm, Search, Clock } from 'lucide-react';
 
 export default function Villa() {
   const navigate = useNavigate();
@@ -17,19 +17,62 @@ export default function Villa() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCity, setSelectedCity] = useState('all');
   const [sortBy, setSortBy] = useState('default');
+  
+  // State untuk pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
+  // Format timestamp upload - SAMA SEPERTI DI PropertyCard.tsx
+  const formatTimeAgo = (uploadDate: string | Date): string => {
+    if (!uploadDate) return '';
+    
+    const now = new Date();
+    const uploaded = new Date(uploadDate);
+    const diffInMs = now.getTime() - uploaded.getTime();
+    const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    
+    // Jika kurang dari 1 jam
+    if (diffInMinutes < 60) {
+      if (diffInMinutes < 1) return 'Baru saja';
+      return `${diffInMinutes} menit yang lalu`;
+    }
+    
+    // Jika kurang dari 24 jam (1 hari)
+    if (diffInHours < 24) {
+      return `${diffInHours} jam yang lalu`;
+    }
+    
+    // Jika kurang dari atau sama dengan 7 hari
+    if (diffInDays <= 7) {
+      return `${diffInDays} hari yang lalu`;
+    }
+    
+    // Jika lebih dari 7 hari, tampilkan tanggal
+    const options: Intl.DateTimeFormatOptions = { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric' 
+    };
+    return uploaded.toLocaleDateString('id-ID', options);
+  };
 
   useEffect(() => {
-    fetch('http://localhost:3000/api/rumah')
+    // ✅ FIXED: Ganti dari /api/rumah ke /api/properties
+    fetch('http://localhost:3000/api/properties')
       .then(res => res.json())
       .then(data => {
+        console.log('📦 Data fetched for Villa:', data);
         const villaOnly = data.filter((item: any) => 
           item.type?.toLowerCase() === 'villa'
         );
+        console.log('✅ Villa filtered:', villaOnly.length);
         setProperties(villaOnly);
         setLoading(false);
       })
       .catch(err => {
-        console.error('Error fetching properties:', err);
+        console.error('❌ Error fetching properties:', err);
         setLoading(false);
       });
   }, []);
@@ -40,17 +83,39 @@ export default function Villa() {
   // Filter dan sort properties
   const filteredProperties = properties
     .filter(property => {
-      const matchSearch = property.nama?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      // ✅ Support both 'title' and 'nama' field
+      const name = property.title || property.nama || '';
+      const matchSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          property.city?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchCity = selectedCity === 'all' || property.city === selectedCity;
       return matchSearch && matchCity;
     })
     .sort((a, b) => {
-      if (sortBy === 'price-low') return (a.harga || 0) - (b.harga || 0);
-      if (sortBy === 'price-high') return (b.harga || 0) - (a.harga || 0);
-      if (sortBy === 'name') return (a.nama || '').localeCompare(b.nama || '');
-      return 0;
+      const priceA = a.price || a.harga || 0;
+      const priceB = b.price || b.harga || 0;
+      if (sortBy === 'price-low') return priceA - priceB;
+      if (sortBy === 'price-high') return priceB - priceA;
+      if (sortBy === 'name') {
+        const nameA = a.title || a.nama || '';
+        const nameB = b.title || b.nama || '';
+        return nameA.localeCompare(nameB);
+      }
+      // Default: urutkan dari yang terbaru ke terlama
+      const dateA = new Date(a.created_at || a.createdAt || 0).getTime();
+      const dateB = new Date(b.created_at || b.createdAt || 0).getTime();
+      return dateB - dateA;
     });
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredProperties.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentProperties = filteredProperties.slice(startIndex, endIndex);
+
+  // Reset ke halaman 1 jika filter berubah
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCity, sortBy]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -58,7 +123,7 @@ export default function Villa() {
 
       {/* Content - Always render, hidden saat loading */}
       <div className={`transition-opacity duration-300 ${loading ? 'opacity-0' : 'opacity-100'}`}>
-        <section className="bg-villa/10 py-12 px-4 border-b border-border">
+        <section className="bg-green-50 py-12 px-4 border-b border-border">
           <div className="container mx-auto max-w-6xl">
             <Button 
               variant="ghost" 
@@ -70,8 +135,8 @@ export default function Villa() {
             </Button>
             
             <div className="flex items-center gap-4 mb-3">
-              <div className="w-16 h-16 bg-villa/20 rounded-2xl flex items-center justify-center">
-                <TreePalm className="w-8 h-8 text-villa" />
+              <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center">
+                <TreePalm className="w-8 h-8 text-green-600" />
               </div>
               <div>
                 <h1 className="text-4xl font-bold text-foreground">Villa</h1>
@@ -154,65 +219,158 @@ export default function Villa() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredProperties.map((property) => (
-                  <div 
-                    key={property.id}
-                    className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                    onClick={() => navigate(`/property/${property.id}`)}
-                  >
-                    <div className="flex gap-4 p-3">
-                      {/* Image - Pentok Kiri */}
-                      <div className="flex-shrink-0">
-                        <img
-                          src={
-                            property.images && property.images.length > 0 
-                              ? `http://localhost:3000${property.images[0]}`
-                              : 'https://placehold.co/140x100'
-                          }
-                          alt={property.nama}
-                          className="w-36 h-24 object-cover rounded"
-                          onError={(e) => {
-                            console.log('❌ Gagal load foto:', property.nama, property.images);
-                            e.currentTarget.src = 'https://placehold.co/140x100';
-                          }}
-                        />
-                      </div>
-
-                      {/* Content - Kanan */}
-                      <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
-                        <div className="space-y-1">
-                          <h3 className="text-lg font-bold line-clamp-1">{property.nama}</h3>
-                          <p className="text-sm text-muted-foreground line-clamp-1">
-                            {property.city}
-                          </p>
-                        </div>
-                        <div className="flex items-end justify-between gap-4">
-                          <div>
-                            <p className="text-xl font-bold text-primary leading-tight">
-                              Rp {property.harga?.toLocaleString('id-ID')}
-                            </p>
-                            <span className="text-xs text-muted-foreground">/ {property.priceUnit}</span>
-                          </div>
-                          
-                          <Button 
-                            size="sm" 
-                            className="h-8 px-4"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const propertyUrl = `${window.location.origin}/property/${property.id}`;
-                              const message = encodeURIComponent(
-                                `Halo ${property.ownerName || 'Pemilik'}, saya tertarik dengan ${property.nama} di ${property.city}. Apakah masih tersedia? ${propertyUrl}`
-                              );
-                              window.open(`https://wa.me/${property.whatsappNumber}?text=${message}`, '_blank');
+                {currentProperties.map((property) => {
+                  // ✅ Support both field names
+                  const title = property.title || property.nama;
+                  const price = property.price || property.harga;
+                  const priceUnit = property.price_unit || property.priceUnit;
+                  const ownerName = property.owner_name || property.ownerName;
+                  const whatsappNumber = property.owner_whatsapp || property.whatsappNumber;
+                  
+                  return (
+                    <div 
+                      key={property.id}
+                      className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                      onClick={() => navigate(`/property/${property.id}`)}
+                    >
+                      <div className="flex gap-4 p-3">
+                        {/* Image - Pentok Kiri */}
+                        <div className="flex-shrink-0">
+                          <img
+                            src={
+                              property.images && property.images.length > 0 
+                                ? `http://localhost:3000${property.images[0]}`
+                                : 'https://placehold.co/140x100'
+                            }
+                            alt={title}
+                            className="w-36 h-24 object-cover rounded"
+                            onError={(e) => {
+                              console.log('❌ Gagal load foto:', title, property.images);
+                              e.currentTarget.src = 'https://placehold.co/140x100';
                             }}
-                          >
-                            Hubungi
-                          </Button>
+                          />
+                        </div>
+
+                        {/* Content - Kanan */}
+                        <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
+                          <div className="space-y-1">
+                            <h3 className="text-lg font-bold line-clamp-1">{title}</h3>
+                            <p className="text-sm text-muted-foreground line-clamp-1">
+                              {property.city}
+                            </p>
+                            {formatTimeAgo(property.created_at || property.createdAt) && (
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Clock className="w-3 h-3" />
+                                <span>{formatTimeAgo(property.created_at || property.createdAt)}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-end justify-between gap-4">
+                            <div>
+                              <p className="text-xl font-bold text-primary leading-tight">
+                                {new Intl.NumberFormat('id-ID', {
+                                  style: 'currency',
+                                  currency: 'IDR',
+                                  minimumFractionDigits: 0,
+                                  maximumFractionDigits: 0,
+                                }).format(price || 0)}
+                              </p>
+                              <span className="text-xs text-muted-foreground">/ {priceUnit}</span>
+                            </div>
+                            
+                            <Button 
+                              size="sm" 
+                              className="h-8 px-4"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const propertyUrl = `${window.location.origin}/property/${property.id}`;
+                                const message = encodeURIComponent(
+                                  `Halo ${ownerName || 'Pemilik'}, saya tertarik dengan ${title} di ${property.city}. Apakah masih tersedia? ${propertyUrl}`
+                                );
+                                window.open(`https://wa.me/${whatsappNumber}?text=${message}`, '_blank');
+                              }}
+                            >
+                              Hubungi
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Pagination Controls */}
+            {filteredProperties.length > 0 && totalPages > 1 && (
+              <div className="mt-8 flex flex-col items-center gap-4">
+                <p className="text-sm text-muted-foreground">
+                  Halaman {currentPage} dari {totalPages} ({filteredProperties.length} total properti)
+                </p>
+                <div className="flex gap-2 flex-wrap justify-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                  >
+                    Pertama
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Sebelumnya
+                  </Button>
+                  
+                  {/* Page Numbers */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter(page => {
+                      // Tampilkan halaman saat ini, 2 sebelum, dan 2 sesudah
+                      return page === 1 || 
+                             page === totalPages || 
+                             (page >= currentPage - 2 && page <= currentPage + 2);
+                    })
+                    .map((page, index, array) => {
+                      // Tambahkan ellipsis jika ada gap
+                      const prevPage = array[index - 1];
+                      const showEllipsis = prevPage && page - prevPage > 1;
+                      
+                      return (
+                        <div key={page} className="flex gap-2">
+                          {showEllipsis && (
+                            <span className="px-3 py-1 text-muted-foreground">...</span>
+                          )}
+                          <Button
+                            variant={currentPage === page ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setCurrentPage(page)}
+                          >
+                            {page}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                  >
+                    Berikutnya
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                  >
+                    Terakhir
+                  </Button>
+                </div>
               </div>
             )}
           </div>

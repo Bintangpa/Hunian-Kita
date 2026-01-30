@@ -34,9 +34,22 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, Coins,Settings,Phone } from 'lucide-react';
+import { Building2, Home, LogOut, Plus, Edit, Trash2, Upload, X, Check, Coins,Settings,Phone, Zap } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+
 
 interface Property {
   id: number;
@@ -59,6 +72,10 @@ interface Property {
   views: number;
   whatsappClicks: number;
   createdAt: string;
+  is_boosted?: number;
+  is_featured?: number;
+  boost_days_remaining?: number;
+  boosted_until?: string;
 }
 
 interface City {
@@ -155,6 +172,9 @@ export default function MitraDashboard() {
     area: '',
   });
 
+  const [boostDialogOpen, setBoostDialogOpen] = useState(false);
+const [propertyToBoost, setPropertyToBoost] = useState<Property | null>(null);
+const [isBoostingProperty, setIsBoostingProperty] = useState(false);
 
   // Tutup dropdown kota saat klik di luar
 useEffect(() => {
@@ -703,6 +723,50 @@ console.log('🔍 USER DATA DI FORM:', user);
     );
   }
 
+  const handleBoostClick = (property: Property) => {
+  setPropertyToBoost(property);
+  setBoostDialogOpen(true);
+};
+
+const handleBoostConfirm = async () => {
+  if (!propertyToBoost || !user?.id) return;
+
+  if (userTokens < 15) {
+    toast({
+      title: 'Token tidak mencukupi',
+      description: `Anda memiliki ${userTokens} token. Dibutuhkan 15 token.`,
+      variant: 'destructive'
+    });
+    setBoostDialogOpen(false);
+    return;
+  }
+
+  setIsBoostingProperty(true);
+
+  try {
+    const response = await fetch(`http://localhost:3000/api/properties/${propertyToBoost.id}/boost`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: user.id })
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+      toast({ title: '🚀 Properti di-boost!', description: 'Properti muncul di atas beranda selama 7 hari' });
+      setUserTokens(result.remaining_tokens);
+      fetchProperties(user.id);
+    } else {
+      toast({ title: 'Gagal boost', description: result.message, variant: 'destructive' });
+    }
+  } catch (error) {
+    toast({ title: 'Error', description: 'Gagal menghubungi server', variant: 'destructive' });
+  } finally {
+    setIsBoostingProperty(false);
+    setBoostDialogOpen(false);
+    setPropertyToBoost(null);
+  }
+};
 
   return (
    <>
@@ -731,23 +795,25 @@ console.log('🔍 USER DATA DI FORM:', user);
                 <p className="text-sm font-medium">{user.name}</p>
                 <p className="text-xs text-muted-foreground">{user.email}</p>
               </div>
-              <Button onClick={handleLogout} variant="outline" size="sm">
+              <Button 
+                onClick={handleLogout} 
+                variant="outline" 
+                size="sm"
+                className="hover:bg-red-50 hover:text-red-600 hover:border-red-300"
+              >
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout
               </Button>
 
-
-    <Button 
-            onClick={() => navigate('/mitra/settings')} 
-            variant="outline" 
-            size="sm"
-            >
-              <Settings className="w-4 h-4 mr-2" />
-                  Pengaturan
-            </Button>
-
-
-
+              <Button 
+                onClick={() => navigate('/mitra/settings')} 
+                variant="outline" 
+                size="sm"
+                className="hover:bg-blue-50 hover:text-blue-600 hover:border-blue-300"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Pengaturan
+              </Button>
             </div>
           </div>
         </div>
@@ -833,7 +899,8 @@ console.log('🔍 USER DATA DI FORM:', user);
               <p className="text-sm mt-1">Klik tombol "Tambah Properti Baru" untuk memulai</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            // ✅ CONTAINER DENGAN SCROLL INTERNAL
+            <div className="max-h-[600px] overflow-y-auto pr-2 space-y-3" style={{ scrollbarWidth: 'thin' }}>
               {properties.map((property) => {
                 let imageUrl = '';
                 if (property.images && property.images.length > 0) {
@@ -851,64 +918,113 @@ console.log('🔍 USER DATA DI FORM:', user);
                 }
                 
                 return (
-                <Card key={property.id} className="overflow-hidden">
-                  <div className="relative h-48 bg-muted">
-                    {imageUrl ? (
-                      <img
-                        src={imageUrl}
-                        alt={property.nama}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          e.currentTarget.src = 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80';
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Home className="w-12 h-12 text-muted-foreground opacity-50" />
-                      </div>
-                    )}
-                    <div className="absolute top-2 right-2">
-                      {getStatusBadge(property.status)}
-                    </div>
-                  </div>
-                  <CardHeader>
-                    <CardTitle className="text-lg">{property.nama}</CardTitle>
-                    <CardDescription>
-                      {property.type} • {property.alamat || property.city || 'Lokasi tidak tersedia'}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <p className="text-2xl font-bold text-primary">
-                        Rp {property.harga.toLocaleString('id-ID')}
-                        <span className="text-sm font-normal text-muted-foreground">/{property.priceUnit}</span>
-                      </p>
-                      <div className="flex gap-2 pt-2">
+                  // ✅ LAYOUT HORIZONTAL COMPACT
+                  <div
+                    key={property.id}
+                    className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                    onClick={() => navigate(`/mitra/dashboard/property/${property.id}`)}
+                  >
+                    <div className="flex gap-4 p-3">
+                      {/* ✅ IMAGE - KIRI */}
+                      <div className="flex-shrink-0 relative">
+                        {imageUrl ? (
+                          <img
+                            src={imageUrl}
+                            alt={property.nama}
+                            className="w-36 h-24 object-cover rounded"
+                            onError={(e) => {
+                              e.currentTarget.src = 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=800&q=80';
+                            }}
+                          />
+                        ) : (
+                          <div className="w-36 h-24 rounded bg-muted flex items-center justify-center">
+                            <Home className="w-8 h-8 text-muted-foreground opacity-50" />
+                          </div>
+                        )}
                         
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => navigate(`/mitra/property/edit/${property.id}`)}
->
-                        <Edit className="w-4 h-4 mr-2" />
-                           Edit
-                      </Button>
+                        {/* Badge Boost di pojok image */}
+                        {property.is_boosted === 1 && (
+                          <div className="absolute top-1 left-1 bg-yellow-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <Zap className="w-3 h-3" />
+                            Boost
+                          </div>
+                        )}
+                      </div>
+
+                      {/* ✅ CONTENT - TENGAH */}
+                      <div className="flex-1 min-w-0 flex flex-col justify-between py-1">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-lg font-bold line-clamp-1">{property.nama}</h3>
+                            {getStatusBadge(property.status)}
+                          </div>
+                          <p className="text-sm text-muted-foreground line-clamp-1">
+                            {property.type} • {property.city}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xl font-bold text-primary leading-tight">
+                            Rp {Math.floor(property.harga).toLocaleString('id-ID')}
+                          </p>
+                          <span className="text-xs text-muted-foreground">/{property.priceUnit}</span>
+                        </div>
+                      </div>
+
+                      {/* ✅ BUTTONS - KANAN (HORIZONTAL) */}
+                      <div className="flex-shrink-0 flex items-center gap-2">
+                        {property.is_boosted === 1 ? (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            disabled
+                            className="bg-yellow-50 text-yellow-700 cursor-not-allowed border-yellow-200"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Zap className="w-3 h-3 mr-1 fill-yellow-500" />
+                            Di-boost
+                          </Button>
+                        ) : (
+                          <Button 
+                            variant="default"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleBoostClick(property);
+                            }}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-white"
+                          >
+                            <Zap className="w-3 h-3 mr-1" />
+                            Boost
+                          </Button>
+                        )}
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/mitra/property/edit/${property.id}`);
+                          }}
+                        >
+                          <Edit className="w-3 h-3 mr-1" />
+                          Edit
+                        </Button>
 
                         <Button
                           variant="destructive"
                           size="sm"
-                          className="flex-1"
-                          onClick={() => handleDelete(property.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(property.id);
+                          }}
                         >
-                          <Trash2 className="w-4 h-4 mr-2" />
+                          <Trash2 className="w-3 h-3 mr-1" />
                           Hapus
                         </Button>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              );
+                  </div>
+                );
               })}
             </div>
           )}
@@ -1231,6 +1347,36 @@ console.log('🔍 USER DATA DI FORM:', user);
           </form>
         </DialogContent>
       </Dialog>
+
+
+      <AlertDialog open={boostDialogOpen} onOpenChange={setBoostDialogOpen}>
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle className="flex items-center gap-2">
+        <Zap className="w-5 h-5 text-yellow-500" />
+        Boost Properti?
+      </AlertDialogTitle>
+      <AlertDialogDescription className="space-y-3">
+        <p>Boost properti <strong>{propertyToBoost?.nama}</strong></p>
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+          <p className="text-sm font-medium">Biaya: 15 Token</p>
+          <p className="text-sm">Token saat ini: {userTokens}</p>
+          <p className="text-sm">Sisa: {userTokens - 15} Token</p>
+        </div>
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+    <AlertDialogFooter>
+      <AlertDialogCancel>Batal</AlertDialogCancel>
+      <AlertDialogAction
+        onClick={handleBoostConfirm}
+        disabled={isBoostingProperty || userTokens < 15}
+        className="bg-yellow-500 hover:bg-yellow-600"
+      >
+        {isBoostingProperty ? 'Memproses...' : 'Ya, Boost Sekarang'}
+      </AlertDialogAction>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
     </div>
     </>
   );

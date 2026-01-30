@@ -18,6 +18,8 @@ import Villa from "./pages/Villa";
 import EditProperty from './pages/mitra/EditProperty';
 import AdminSettings from './pages/admin/AdminSettings';
 import MitraSettings from './pages/mitra/MitraSettings';
+import Propertydetail from '@/pages/mitra/Propertydetail';
+
 
 
 
@@ -53,6 +55,10 @@ const App = () => (
           <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route path="/mitra/dashboard" element={<MitraDashboard />} />
           
+        <Route path="/mitra/dashboard" element={<MitraDashboard />} />
+        <Route path="/mitra/dashboard/property/:id" element={<Propertydetail />} />
+        <Route path="/mitra/dashboard/edit/:id" element={<EditProperty />} />
+
           <Route path="/admin/settings" element={<AdminSettings />} />
           <Route path="/mitra/property/edit/:id" element={<EditProperty />} />
 

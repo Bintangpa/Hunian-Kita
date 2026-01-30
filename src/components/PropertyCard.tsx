@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { MapPin, MessageCircle } from 'lucide-react';
+import { MapPin, MessageCircle, Zap, Star, Clock, Home } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 interface PropertyCardProps {
@@ -15,6 +15,46 @@ const typeLabels: Record<string, string> = {
 
 export function PropertyCard({ property }: PropertyCardProps) {
   const navigate = useNavigate();
+  
+  // ✅ PINDAHKAN KE SINI (di dalam function)
+  const isBoosted = property.is_boosted === 1;
+  const boostDaysRemaining = property.boost_days_remaining || 0;
+  
+  // Format timestamp upload
+  const formatTimeAgo = (uploadDate: string | Date): string => {
+    if (!uploadDate) return '';
+    
+    const now = new Date();
+    const uploaded = new Date(uploadDate);
+    const diffInMs = now.getTime() - uploaded.getTime();
+    const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    
+    // Jika kurang dari 1 jam
+    if (diffInMinutes < 60) {
+      if (diffInMinutes < 1) return 'Baru saja';
+      return `${diffInMinutes} menit yang lalu`;
+    }
+    
+    // Jika kurang dari 24 jam (1 hari)
+    if (diffInHours < 24) {
+      return `${diffInHours} jam yang lalu`;
+    }
+    
+    // Jika kurang dari atau sama dengan 7 hari
+    if (diffInDays <= 7) {
+      return `${diffInDays} hari yang lalu`;
+    }
+    
+    // Jika lebih dari 7 hari, tampilkan tanggal
+    const options: Intl.DateTimeFormatOptions = { 
+      day: 'numeric', 
+      month: 'long', 
+      year: 'numeric' 
+    };
+    return uploaded.toLocaleDateString('id-ID', options);
+  };
   
   // Parse price safely
   const getPrice = () => {
@@ -36,6 +76,8 @@ export function PropertyCard({ property }: PropertyCardProps) {
   const ownerName = property.owner_name || property.ownerName || 'Pemilik';
   const ownerWhatsapp = property.owner_whatsapp || property.whatsappNumber || '';
   const title = property.title || property.nama || 'Properti';
+  const uploadedAt = property.created_at || property.createdAt || '';
+  const timeAgo = formatTimeAgo(uploadedAt);
   
   // Ambil lokasi hanya dari field city
   let address = '';
@@ -47,13 +89,28 @@ export function PropertyCard({ property }: PropertyCardProps) {
     address = property.city || '';
   }
   
-  // Parse facilities
-  let facilities = [];
+  // Parse facilities dengan validasi ketat
+  let facilities: string[] = [];
   try {
-    facilities = typeof property.facilities === 'string' 
-      ? JSON.parse(property.facilities) 
-      : (property.facilities || []);
+    const facilitiesData = property.facilities;
+    
+    if (Array.isArray(facilitiesData)) {
+      // Sudah array, langsung pakai
+      facilities = facilitiesData;
+    } else if (typeof facilitiesData === 'string' && facilitiesData.trim()) {
+      // String, coba parse JSON
+      const parsed = JSON.parse(facilitiesData);
+      if (Array.isArray(parsed)) {
+        facilities = parsed;
+      }
+    }
   } catch (e) {
+    console.error('Error parsing facilities:', e);
+    facilities = [];
+  }
+  
+  // ✅ FINAL CHECK: Pastikan facilities adalah array
+  if (!Array.isArray(facilities)) {
     facilities = [];
   }
   
@@ -106,17 +163,17 @@ export function PropertyCard({ property }: PropertyCardProps) {
 
   
   const handleWhatsAppClick = (e: React.MouseEvent) => {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  const propertyUrl = `${window.location.origin}/property/${property.id}`;
-  const message = encodeURIComponent(
-    `Halo ${ownerName}, saya tertarik dengan ${title} di ${address}. Apakah masih tersedia? ${propertyUrl}`
-  );
-  if (ownerWhatsapp) {
-    window.open(`https://wa.me/${ownerWhatsapp}?text=${message}`, '_blank');
-  }
-};
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const propertyUrl = `${window.location.origin}/property/${property.id}`;
+    const message = encodeURIComponent(
+      `Halo ${ownerName}, saya tertarik dengan ${title} di ${address}. Apakah masih tersedia? ${propertyUrl}`
+    );
+    if (ownerWhatsapp) {
+      window.open(`https://wa.me/${ownerWhatsapp}?text=${message}`, '_blank');
+    }
+  };
 
   const handleCardClick = () => {
     navigate(`/property/${property.id}`);
@@ -136,19 +193,37 @@ export function PropertyCard({ property }: PropertyCardProps) {
             onError={(e) => {
               console.error('Image load error:', imageUrl);
               e.currentTarget.style.display = 'none';
-              e.currentTarget.parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center text-muted-foreground"><span class="text-6xl">🏠</span></div>';
+              const parent = e.currentTarget.parentElement;
+              if (parent) {
+                parent.innerHTML = '<div class="w-full h-full flex items-center justify-center text-muted-foreground"><svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg></div>';
+              }
             }}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-muted-foreground">
-            <span className="text-6xl">🏠</span>
+            <Home className="w-16 h-16" />
           </div>
         )}
         
+        {/* ✅ BADGES SECTION - FIXED CLOSING TAG */}
         <div className="absolute top-3 left-3 flex gap-2">
-          {property.is_featured === 1 && (
-            <span className="px-3 py-1 bg-yellow-500 text-white text-xs font-semibold rounded-full">⭐ Promosi</span>
+          {/* Badge Boost - Prioritas tertinggi */}
+          {isBoosted && (
+            <span className="px-3 py-1 bg-yellow-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+              <Zap className="w-3 h-3" />
+              Boost
+            </span>
           )}
+          
+          {/* Badge Promosi - ✅ PAKAI ICON STAR */}
+          {property.is_featured === 1 && (
+            <span className="px-3 py-1 bg-orange-500 text-white text-xs font-semibold rounded-full flex items-center gap-1">
+              <Star className="w-3 h-3 fill-white" />
+              Promosi
+            </span>
+          )}
+          
+          {/* Badge Tipe */}
           <span className={`px-3 py-1 text-xs font-semibold rounded-full ${
             propertyType === 'kost' ? 'bg-blue-500 text-white' :
             propertyType === 'villa' ? 'bg-green-500 text-white' :
@@ -159,11 +234,20 @@ export function PropertyCard({ property }: PropertyCardProps) {
         </div>
       </div>
 
+      {/* ✅ CARD BODY - FIXED STRUCTURE */}
       <div className="p-4 space-y-3">
         <div>
-          <h3 className="font-semibold text-lg text-foreground line-clamp-1">
-            {title}
-          </h3>
+          <div className="flex items-start justify-between gap-2 mb-1">
+            <h3 className="font-semibold text-lg text-foreground line-clamp-1 flex-1">
+              {title}
+            </h3>
+            {timeAgo && (
+              <div className="flex items-center gap-1 text-muted-foreground text-xs whitespace-nowrap">
+                <Clock className="w-3 h-3" />
+                <span>{timeAgo}</span>
+              </div>
+            )}
+          </div>
           {address && (
             <div className="flex items-center gap-1 text-muted-foreground text-sm mt-1">
               <MapPin className="w-4 h-4" />

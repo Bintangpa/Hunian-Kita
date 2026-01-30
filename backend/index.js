@@ -286,108 +286,220 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
   }
 });
 
-// ========== API GET PROPERTY BY ID (DETAIL) ==========
-app.get('/api/rumah/:id', (req, res) => {
-  const { id } = req.params;
-  
+// ========== GET ALL PROPERTIES (ENDPOINT UTAMA) ==========
+app.get('/api/rumah', (req, res) => {
+  console.log('📥 Fetching all properties');
+
   const sql = `
     SELECT 
-      p.id,
-      p.title as nama,
-      LOWER(p.type) as type,
-      p.address as alamat,
-      COALESCE(ct.name, 'Jakarta') as city,
-      TRIM(SUBSTRING_INDEX(p.address, ',', 1)) as district,
-      p.price as harga,
-      COALESCE(p.price_unit, 'bulan') as priceUnit,
-      COALESCE(p.description, '') as description,
-      COALESCE(p.facilities, '[]') as facilities,
-      COALESCE(p.owner_name, 'Pemilik Properti') as ownerName,
-      COALESCE(p.owner_whatsapp, '628123456789') as whatsappNumber,
-      COALESCE(p.bedrooms, 1) as bedrooms,
-      COALESCE(p.bathrooms, 1) as bathrooms,
-      COALESCE(p.area, 20) as area,
-      COALESCE(p.is_featured, 0) as isSponsored,
-      COALESCE(p.views, 0) as views,
-      COALESCE(p.whatsapp_clicks, 0) as whatsappClicks,
-      p.created_at as createdAt,
-      COALESCE(u.name, '') as uploaderName,
-      COALESCE(u.role, '') as uploaderRole
+      p.*,
+      c.name as city,
+      cat.name as category_name,
+      u.name as uploader_name,
+      u.role as uploader_role,
+      CASE 
+        WHEN p.boosted_until > NOW() THEN 1 
+        ELSE 0 
+      END as is_boosted,
+      CASE
+        WHEN p.boosted_until > NOW() 
+        THEN DATEDIFF(p.boosted_until, NOW())
+        ELSE 0
+      END as boost_days_remaining
     FROM properties p
-    LEFT JOIN categories c ON p.category_id = c.id
-    LEFT JOIN cities ct ON p.city_id = ct.id
+    LEFT JOIN cities c ON p.city_id = c.id
+    LEFT JOIN categories cat ON p.category_id = cat.id
     LEFT JOIN users u ON p.user_id = u.id
-    WHERE p.id = ? AND p.status = 'available'
+    WHERE p.status = 'available'
+    ORDER BY 
+      is_boosted DESC,
+      p.created_at DESC
   `;
-  
-  db.query(sql, [id], (err, results) => {
+
+  db.query(sql, (err, propertiesResults) => {
     if (err) {
-      console.error('Query error:', err);
+      console.error('❌ Database error:', err);
       return res.status(500).json({ error: 'Database error' });
     }
-    
-    if (results.length === 0) {
-      return res.status(404).json({ error: 'Property not found' });
+
+    if (propertiesResults.length === 0) {
+      return res.json([]);
     }
-    
-    const row = results[0];
-    
-    // ✅ AMBIL SEMUA FOTO DARI TABEL IMAGES
+
+    const propertyIds = propertiesResults.map(p => p.id);
     const imagesSql = `
-      SELECT image_path, is_primary, display_order 
+      SELECT property_id, image_path, is_primary, display_order
       FROM images 
-      WHERE property_id = ? 
-      ORDER BY is_primary DESC, display_order ASC
+      WHERE property_id IN (?)
+      ORDER BY property_id, display_order
     `;
-    
-    db.query(imagesSql, [id], (err, imagesResults) => {
+
+    db.query(imagesSql, [propertyIds], (err, imagesResults) => {
       if (err) {
-        console.error('Error fetching images:', err);
+        console.error('❌ Error fetching images:', err);
         return res.status(500).json({ error: 'Database error' });
       }
-      
-      const images = imagesResults.map(img => img.image_path);
-      
-      let facilities = [];
-      if (row.facilities) {
-        try {
-          facilities = JSON.parse(row.facilities);
-        } catch (e) {
-          facilities = [];
+
+      const imagesMap = new Map();
+      imagesResults.forEach(img => {
+        if (!imagesMap.has(img.property_id)) {
+          imagesMap.set(img.property_id, []);
         }
-      }
-      
-      const property = {
+        imagesMap.get(img.property_id).push(img.image_path);
+      });
+
+      // ✅ RETURN ARRAY LANGSUNG (bukan object!)
+      const properties = propertiesResults.map(row => ({
         id: row.id,
-        nama: row.nama,
+        nama: row.title,           // OLD format
+        title: row.title,          // NEW format
         type: row.type,
-        alamat: row.alamat,
         city: row.city,
-        district: row.district,
-        harga: parseFloat(row.harga) || 0,
-        priceUnit: row.priceUnit,
+        alamat: row.address,       // OLD format
+        address: row.address,      // NEW format
+        harga: row.price,          // OLD format
+        price: row.price,          // NEW format
+        priceUnit: row.price_unit, // OLD format
+        price_unit: row.price_unit,// NEW format
         description: row.description,
-        facilities: facilities,
-        images: images, // ✅ DARI TABEL IMAGES
-        ownerName: row.ownerName,
-        whatsappNumber: row.whatsappNumber,
+        facilities: row.facilities,
+        ownerName: row.owner_name,      // OLD format
+        owner_name: row.owner_name,     // NEW format
+        whatsappNumber: row.owner_whatsapp,  // OLD format
+        owner_whatsapp: row.owner_whatsapp,  // NEW format
         bedrooms: row.bedrooms,
         bathrooms: row.bathrooms,
         area: row.area,
-        isSponsored: row.isSponsored === 1,
+        status: row.status,
         views: row.views,
-        whatsappClicks: row.whatsappClicks,
-        createdAt: row.createdAt,
-        uploaderName: row.uploaderName || '',
-        uploaderRole: row.uploaderRole || ''
-      };
-      
-      console.log('✅ Property detail fetched:', property.nama);
-      res.json(property);
+        whatsappClicks: row.whatsapp_clicks,  // OLD format
+        whatsapp_clicks: row.whatsapp_clicks, // NEW format
+        createdAt: row.created_at,            // OLD format
+        created_at: row.created_at,           // NEW format
+        category_name: row.category_name,
+        uploader_name: row.uploader_name,
+        uploader_role: row.uploader_role,
+        is_boosted: row.is_boosted,
+        boost_days_remaining: row.boost_days_remaining,
+        boosted_until: row.boosted_until,
+        images: imagesMap.get(row.id) || []
+      }));
+
+      console.log(`✅ Returned ${properties.length} properties`);
+      res.json(properties);  // ✅ ARRAY, bukan object!
     });
   });
 });
 
+
+// ========== BACKWARD COMPATIBILITY - /api/rumah ==========
+// Endpoint ini untuk file lama yang masih pakai /api/rumah
+app.get('/api/rumah', (req, res) => {
+  console.log('⚠️ Using OLD endpoint: /api/rumah (backward compatibility)');
+  
+  // Copy-paste SEMUA ISI dari app.get('/api/properties') di atas
+  // Atau redirect ke function yang sama
+  const sql = `
+    SELECT 
+      p.*,
+      c.name as city,
+      cat.name as category_name,
+      u.name as uploader_name,
+      u.role as uploader_role,
+      CASE 
+        WHEN p.boosted_until > NOW() THEN 1 
+        ELSE 0 
+      END as is_boosted,
+      CASE
+        WHEN p.boosted_until > NOW() 
+        THEN DATEDIFF(p.boosted_until, NOW())
+        ELSE 0
+      END as boost_days_remaining
+    FROM properties p
+    LEFT JOIN cities c ON p.city_id = c.id
+    LEFT JOIN categories cat ON p.category_id = cat.id
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE p.status = 'available'
+    ORDER BY 
+      is_boosted DESC,
+      p.created_at DESC
+  `;
+
+  db.query(sql, (err, propertiesResults) => {
+    if (err) {
+      console.error('❌ Database error:', err);
+      return res.status(500).json({ error: 'Database error' });
+    }
+
+    if (propertiesResults.length === 0) {
+      return res.json([]);
+    }
+
+    const propertyIds = propertiesResults.map(p => p.id);
+    const imagesSql = `
+      SELECT property_id, image_path, is_primary, display_order
+      FROM images 
+      WHERE property_id IN (?)
+      ORDER BY property_id, display_order
+    `;
+
+    db.query(imagesSql, [propertyIds], (err, imagesResults) => {
+      if (err) {
+        console.error('❌ Error fetching images:', err);
+        return res.status(500).json({ error: 'Database error' });
+      }
+
+      const imagesMap = new Map();
+      imagesResults.forEach(img => {
+        if (!imagesMap.has(img.property_id)) {
+          imagesMap.set(img.property_id, []);
+        }
+        imagesMap.get(img.property_id).push(img.image_path);
+      });
+
+      const properties = propertiesResults.map(row => ({
+        id: row.id,
+        nama: row.title,           // OLD format
+        title: row.title,          // NEW format
+        type: row.type,
+        city: row.city,
+        district: '',
+        alamat: row.address,       // OLD format
+        address: row.address,      // NEW format
+        harga: row.price,          // OLD format
+        price: row.price,          // NEW format
+        priceUnit: row.price_unit, // OLD format
+        price_unit: row.price_unit,// NEW format
+        description: row.description,
+        facilities: row.facilities,
+        ownerName: row.owner_name,      // OLD format
+        owner_name: row.owner_name,     // NEW format
+        whatsappNumber: row.owner_whatsapp,  // OLD format
+        owner_whatsapp: row.owner_whatsapp,  // NEW format
+        bedrooms: row.bedrooms,
+        bathrooms: row.bathrooms,
+        area: row.area,
+        status: row.status,
+        isSponsored: false,
+        views: row.views,
+        whatsappClicks: row.whatsapp_clicks,  // OLD format
+        whatsapp_clicks: row.whatsapp_clicks, // NEW format
+        createdAt: row.created_at,            // OLD format
+        created_at: row.created_at,           // NEW format
+        category_name: row.category_name,
+        uploader_name: row.uploader_name,
+        uploader_role: row.uploader_role,
+        is_boosted: row.is_boosted,
+        boost_days_remaining: row.boost_days_remaining,
+        boosted_until: row.boosted_until,
+        images: imagesMap.get(row.id) || []
+      }));
+
+      console.log(`✅ /api/rumah: Returned ${properties.length} properties`);
+      res.json(properties);
+    });
+  });
+});
 
 // ========== API LOGIN (Updated with tokens) ==========
 app.post('/api/login', async (req, res) => {
@@ -702,7 +814,17 @@ app.get('/api/properties/mitra/:userId', (req, res) => {
       COALESCE(p.views, 0) as views,
       COALESCE(p.whatsapp_clicks, 0) as whatsappClicks,
       p.status,
-      p.created_at as createdAt
+      p.created_at as createdAt,
+      CASE 
+        WHEN p.boosted_until > NOW() THEN 1 
+        ELSE 0 
+      END as is_boosted,
+      CASE
+        WHEN p.boosted_until > NOW() 
+        THEN DATEDIFF(p.boosted_until, NOW())
+        ELSE 0
+      END as boost_days_remaining,
+      p.boosted_until
     FROM properties p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN cities ct ON p.city_id = ct.id
@@ -1799,111 +1921,6 @@ app.get('/api/users/:id', (req, res) => {
 });
 
 
-// ========== API GET ALL PROPERTIES (UNTUK HALAMAN UTAMA) ==========
-app.get('/api/rumah', (req, res) => {
-  console.log('📋 Fetching all properties for homepage');
-  
-  const sql = `
-    SELECT 
-      p.id,
-      p.title as nama,
-      LOWER(p.type) as type,
-      p.address as alamat,
-      COALESCE(ct.name, 'Jakarta') as city,
-      TRIM(SUBSTRING_INDEX(p.address, ',', 1)) as district,
-      p.price as harga,
-      COALESCE(p.price_unit, 'bulan') as priceUnit,
-      COALESCE(p.description, '') as description,
-      COALESCE(p.facilities, '[]') as facilities,
-      COALESCE(p.owner_name, 'Pemilik Properti') as ownerName,
-      COALESCE(p.owner_whatsapp, '628123456789') as whatsappNumber,
-      COALESCE(p.bedrooms, 1) as bedrooms,
-      COALESCE(p.bathrooms, 1) as bathrooms,
-      COALESCE(p.area, 20) as area,
-      COALESCE(p.is_featured, 0) as isSponsored,
-      COALESCE(p.views, 0) as views,
-      COALESCE(p.whatsapp_clicks, 0) as whatsappClicks,
-      p.created_at as createdAt
-    FROM properties p
-    LEFT JOIN categories c ON p.category_id = c.id
-    LEFT JOIN cities ct ON p.city_id = ct.id
-    WHERE p.status = 'available'
-    ORDER BY p.is_featured DESC, p.created_at DESC
-  `;
-  
-  db.query(sql, (err, results) => {
-    if (err) {
-      console.error('❌ Error fetching properties:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
-    
-    if (results.length === 0) {
-      console.log('⚠️ No properties found in database');
-      return res.json([]);
-    }
-    
-    const propertyIds = results.map(r => r.id);
-    
-    const imagesSql = `
-      SELECT property_id, image_path, is_primary, display_order 
-      FROM images 
-      WHERE property_id IN (${propertyIds.join(',')})
-      ORDER BY is_primary DESC, display_order ASC
-    `;
-    
-    db.query(imagesSql, (err, imagesResults) => {
-      if (err) {
-        console.error('❌ Error fetching images:', err);
-        return res.status(500).json({ error: 'Database error' });
-      }
-      
-      const imagesMap = {};
-      imagesResults.forEach(img => {
-        if (!imagesMap[img.property_id]) {
-          imagesMap[img.property_id] = [];
-        }
-        imagesMap[img.property_id].push(img.image_path);
-      });
-      
-      const formatted = results.map(row => {
-        let facilities = [];
-        try {
-          facilities = JSON.parse(row.facilities);
-        } catch (e) {
-          facilities = [];
-        }
-        
-        const images = imagesMap[row.id] || [];
-        
-        return {
-          id: row.id,
-          nama: row.nama,
-          type: row.type,
-          alamat: row.alamat,
-          city: row.city,
-          district: row.district,
-          harga: parseFloat(row.harga) || 0,
-          priceUnit: row.priceUnit,
-          description: row.description,
-          facilities: facilities,
-          images: images,
-          ownerName: row.ownerName,
-          whatsappNumber: row.whatsappNumber,
-          bedrooms: row.bedrooms,
-          bathrooms: row.bathrooms,
-          area: row.area,
-          isSponsored: row.isSponsored === 1,
-          views: row.views,
-          whatsappClicks: row.whatsappClicks,
-          createdAt: row.createdAt
-        };
-      });
-      
-      console.log(`✅ Fetched ${formatted.length} properties with images`);
-      res.json(formatted);
-    });
-  });
-});
 
 
 // ========== API GET SEMUA DATA HALAMAN PASANG IKLAN ==========
@@ -2237,7 +2254,679 @@ app.put('/api/admin/pasang-iklan/cta', (req, res) => {
 
 
 
+// ========== API BOOST PROPERTY ==========
+app.post('/api/properties/:id/boost', (req, res) => {
+  const propertyId = req.params.id;
+  const { user_id } = req.body;
+  
+  console.log('🚀 Boost property request:', propertyId, 'by user:', user_id);
+  
+  if (!user_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'User ID tidak ditemukan'
+    });
+  }
+  
+  // ✅ STEP 1: Cek kepemilikan properti
+  const checkOwnerSql = 'SELECT user_id FROM properties WHERE id = ?';
+  
+  db.query(checkOwnerSql, [propertyId], (err, propertyResults) => {
+    if (err) {
+      console.error('❌ Error checking property:', err);
+      return res.status(500).json({
+        success: false,
+        message: 'Terjadi kesalahan saat mengecek properti'
+      });
+    }
+    
+    if (propertyResults.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Properti tidak ditemukan'
+      });
+    }
+    
+    if (propertyResults[0].user_id !== parseInt(user_id)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Anda tidak memiliki akses untuk boost properti ini'
+      });
+    }
+    
+    // ✅ STEP 2: Cek token user
+    const checkTokenSql = 'SELECT tokens FROM users WHERE id = ?';
+    
+    db.query(checkTokenSql, [user_id], (err, userResults) => {
+      if (err) {
+        console.error('❌ Error checking tokens:', err);
+        return res.status(500).json({
+          success: false,
+          message: 'Terjadi kesalahan saat mengecek token'
+        });
+      }
+      
+      if (userResults.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'User tidak ditemukan'
+        });
+      }
+      
+      const userTokens = userResults[0].tokens;
+      
+      if (userTokens < 15) {
+        return res.status(403).json({
+          success: false,
+          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan 15 token untuk boost properti.`
+        });
+      }
+      
+      // ✅ STEP 3: Hitung tanggal berakhir (7 hari dari sekarang)
+      const now = new Date();
+      const boostUntil = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000)); // +7 hari
+      
+      // ✅ STEP 4: Update properti dengan boost
+      const updatePropertySql = `
+        UPDATE properties 
+        SET boosted_until = ?, boost_activated_at = NOW() 
+        WHERE id = ?
+      `;
+      
+      db.query(updatePropertySql, [boostUntil, propertyId], (err) => {
+        if (err) {
+          console.error('❌ Error updating property:', err);
+          return res.status(500).json({
+            success: false,
+            message: 'Gagal mengaktifkan boost'
+          });
+        }
+        
+        // ✅ STEP 5: Kurangi token user
+        const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
+        
+        db.query(updateTokenSql, [user_id], (err) => {
+          if (err) {
+            console.error('❌ Error updating tokens:', err);
+            return res.status(500).json({
+              success: false,
+              message: 'Boost berhasil tapi gagal mengurangi token'
+            });
+          }
+          
+          console.log(`✅ Property ${propertyId} boosted until ${boostUntil}`);
+          console.log(`✅ User ${user_id} tokens reduced by 15`);
+          
+          res.json({
+            success: true,
+            message: 'Properti berhasil di-boost selama 7 hari!',
+            boosted_until: boostUntil,
+            remaining_tokens: userTokens - 15
+          });
+        });
+      });
+    });
+  });
+});
 
+
+
+
+
+// ========== GET USER PROPERTIES (DASHBOARD) - DENGAN BOOST INFO ==========
+// ⚠️ GANTI endpoint '/api/user-properties/:userId' yang sudah ada dengan yang ini
+app.get('/api/user-properties/:userId', (req, res) => {
+  const userId = req.params.userId;
+  
+  console.log(`📥 Fetching properties for user ${userId} with boost info`);
+
+  const sql = `
+    SELECT 
+      p.*,
+      c.name as city,
+      cat.name as category_name,
+      CASE 
+        WHEN p.boosted_until > NOW() THEN 1 
+        ELSE 0 
+      END as is_boosted,
+      CASE
+        WHEN p.boosted_until > NOW() 
+        THEN DATEDIFF(p.boosted_until, NOW())
+        ELSE 0
+      END as boost_days_remaining
+    FROM properties p
+    LEFT JOIN cities c ON p.city_id = c.id
+    LEFT JOIN categories cat ON p.category_id = cat.id
+    WHERE p.user_id = ?
+    ORDER BY p.created_at DESC
+  `;
+
+  db.query(sql, [userId], (err, propertiesResults) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).json({ 
+        error: 'Database error', 
+        details: err.message 
+      });
+    }
+
+    console.log(`✅ Found ${propertiesResults.length} properties for user ${userId}`);
+    
+    if (propertiesResults.length === 0) {
+      return res.json([]);
+    }
+
+    // Get images for all properties
+    const propertyIds = propertiesResults.map(p => p.id);
+    const imagesSql = `
+      SELECT property_id, image_path, is_primary, display_order
+      FROM images 
+      WHERE property_id IN (?)
+      ORDER BY property_id, display_order
+    `;
+
+    db.query(imagesSql, [propertyIds], (err, imagesResults) => {
+      if (err) {
+        console.error('Error fetching images:', err);
+        return res.status(500).json({ 
+          error: 'Database error', 
+          details: err.message 
+        });
+      }
+
+      // Group images by property_id
+      const imagesMap = new Map();
+      imagesResults.forEach(img => {
+        if (!imagesMap.has(img.property_id)) {
+          imagesMap.set(img.property_id, []);
+        }
+        imagesMap.get(img.property_id).push(img.image_path);
+      });
+
+      // Combine properties with images
+      const properties = propertiesResults.map(property => ({
+        id: property.id,
+        nama: property.title,
+        type: property.type,
+        city: property.city,
+        alamat: property.address,
+        harga: property.price,
+        priceUnit: property.price_unit,
+        description: property.description,
+        facilities: property.facilities,
+        ownerName: property.owner_name,
+        whatsappNumber: property.owner_whatsapp,
+        bedrooms: property.bedrooms,
+        bathrooms: property.bathrooms,
+        area: property.area,
+        status: property.status,
+        views: property.views,
+        whatsappClicks: property.whatsapp_clicks,
+        createdAt: property.created_at,
+        category_name: property.category_name,
+        is_boosted: property.is_boosted,
+        boost_days_remaining: property.boost_days_remaining,
+        boosted_until: property.boosted_until,
+        images: imagesMap.get(property.id) || []
+      }));
+
+      console.log(`✅ Returning ${properties.length} properties with images and boost info`);
+      res.json(properties);
+    });
+  });
+});
+
+
+// ========================================
+// OPTIONAL: API untuk cek status boost
+// ========================================
+// ========== GET ALL PROPERTIES (FIXED - DENGAN BOOST INFO & SORTING) ==========
+// ⚠️ GANTI endpoint '/api/properties' yang sudah ada dengan kode ini
+
+app.get('/api/properties', (req, res) => {
+  console.log('📥 Fetching all properties with boost info and sorting');
+
+  const sql = `
+    SELECT 
+      p.*,
+      c.name as city,
+      cat.name as category_name,
+      u.name as uploader_name,
+      u.role as uploader_role,
+      CASE 
+        WHEN p.boosted_until > NOW() THEN 1 
+        ELSE 0 
+      END as is_boosted,
+      CASE
+        WHEN p.boosted_until > NOW() 
+        THEN DATEDIFF(p.boosted_until, NOW())
+        ELSE 0
+      END as boost_days_remaining
+    FROM properties p
+    LEFT JOIN cities c ON p.city_id = c.id
+    LEFT JOIN categories cat ON p.category_id = cat.id
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE p.status = 'available'
+    ORDER BY 
+      is_boosted DESC,           -- ✅ Properti boost di paling atas
+      p.created_at DESC          -- Lalu urutkan dari yang terbaru
+  `;
+
+  db.query(sql, (err, propertiesResults) => {
+    if (err) {
+      console.error('❌ Database error:', err);
+      return res.status(500).json({ 
+        error: 'Database error', 
+        details: err.message 
+      });
+    }
+
+    if (propertiesResults.length === 0) {
+      console.log('⚠️ No properties found');
+      return res.json([]);
+    }
+
+    // Get all property IDs
+    const propertyIds = propertiesResults.map(p => p.id);
+
+    // Get images for all properties
+    const imagesSql = `
+      SELECT property_id, image_path, is_primary, display_order
+      FROM images 
+      WHERE property_id IN (?)
+      ORDER BY property_id, display_order
+    `;
+
+    db.query(imagesSql, [propertyIds], (err, imagesResults) => {
+      if (err) {
+        console.error('❌ Error fetching images:', err);
+        return res.status(500).json({ 
+          error: 'Database error', 
+          details: err.message 
+        });
+      }
+
+      // Group images by property_id
+      const imagesMap = new Map();
+      imagesResults.forEach(img => {
+        if (!imagesMap.has(img.property_id)) {
+          imagesMap.set(img.property_id, []);
+        }
+        imagesMap.get(img.property_id).push(img.image_path);
+      });
+
+      // Combine properties with images
+      const propertiesWithImages = propertiesResults.map(row => {
+        // ✅ Parse facilities jadi array
+        let facilitiesArray = [];
+        try {
+          if (typeof row.facilities === 'string') {
+            facilitiesArray = JSON.parse(row.facilities);
+          } else if (Array.isArray(row.facilities)) {
+            facilitiesArray = row.facilities;
+          }
+        } catch (e) {
+          console.error('Error parsing facilities for property', row.id, e);
+          facilitiesArray = [];
+        }
+
+        return {
+          id: row.id,
+          title: row.title,
+          type: row.type,
+          city: row.city,
+          address: row.address,
+          price: Math.floor(row.price), // ✅ CONVERT ke integer
+          price_unit: row.price_unit,
+          description: row.description,
+          facilities: facilitiesArray, // ✅ Return as array
+          owner_name: row.owner_name,
+          owner_whatsapp: row.owner_whatsapp,
+          bedrooms: row.bedrooms,
+          bathrooms: row.bathrooms,
+          area: row.area,
+          status: row.status,
+          views: row.views,
+          whatsapp_clicks: row.whatsapp_clicks,
+          created_at: row.created_at,
+          category_name: row.category_name,
+          uploader_name: row.uploader_name,
+          uploader_role: row.uploader_role,
+          is_boosted: row.is_boosted,
+          boost_days_remaining: row.boost_days_remaining,
+          boosted_until: row.boosted_until,
+          images: imagesMap.get(row.id) || []
+        };
+      });
+
+      // Count boosted and regular properties
+      const boostedCount = propertiesWithImages.filter(p => p.is_boosted === 1).length;
+      const regularCount = propertiesWithImages.length - boostedCount;
+
+      console.log(`✅ Fetched ${propertiesWithImages.length} properties`);
+      console.log(`   🚀 Boosted: ${boostedCount}`);
+      console.log(`   📋 Regular: ${regularCount}`);
+      
+      res.json(propertiesWithImages);
+    });
+  });
+});
+
+app.post('/api/properties/:id/boost', (req, res) => {
+  const propertyId = req.params.id;
+  const { user_id } = req.body;
+  
+  if (!user_id) {
+    return res.status(400).json({ success: false, message: 'User ID tidak ditemukan' });
+  }
+  
+  const checkOwnerSql = 'SELECT user_id FROM properties WHERE id = ?';
+  db.query(checkOwnerSql, [propertyId], (err, propertyResults) => {
+    if (err || propertyResults.length === 0) {
+      return res.status(404).json({ success: false, message: 'Properti tidak ditemukan' });
+    }
+    
+    if (propertyResults[0].user_id !== parseInt(user_id)) {
+      return res.status(403).json({ success: false, message: 'Tidak ada akses' });
+    }
+    
+    const checkTokenSql = 'SELECT tokens FROM users WHERE id = ?';
+    db.query(checkTokenSql, [user_id], (err, userResults) => {
+      if (err || userResults.length === 0) {
+        return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
+      }
+      
+      const userTokens = userResults[0].tokens;
+      if (userTokens < 15) {
+        return res.status(403).json({
+          success: false,
+          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token.`
+        });
+      }
+      
+      const now = new Date();
+      const boostUntil = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
+      
+      const updatePropertySql = 'UPDATE properties SET boosted_until = ?, boost_activated_at = NOW() WHERE id = ?';
+      db.query(updatePropertySql, [boostUntil, propertyId], (err) => {
+        if (err) {
+          return res.status(500).json({ success: false, message: 'Gagal boost' });
+        }
+        
+        const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
+        db.query(updateTokenSql, [user_id], (err) => {
+          if (err) {
+            return res.status(500).json({ success: false, message: 'Boost berhasil tapi token gagal dikurangi' });
+          }
+          
+          console.log(`✅ Property ${propertyId} boosted until ${boostUntil}`);
+          res.json({
+            success: true,
+            message: 'Properti berhasil di-boost selama 7 hari!',
+            boosted_until: boostUntil,
+            remaining_tokens: userTokens - 15
+          });
+        });
+      });
+    });
+  });
+});
+
+// ========== GET PROPERTY DETAIL BY ID ==========
+// ⚠️ TAMBAHKAN KODE INI ke file index.js Anda (sebelum app.listen)
+
+app.get('/api/rumah/:id', (req, res) => {
+  const propertyId = req.params.id;
+  
+  console.log(`📥 Fetching property detail for ID: ${propertyId}`);
+
+  // Query untuk mengambil detail properti dengan join ke tabel cities, categories, dan users
+  const sql = `
+    SELECT 
+      p.*,
+      c.name as city,
+      cat.name as category_name,
+      u.name as uploader_name,
+      u.role as uploader_role,
+      CASE 
+        WHEN p.boosted_until > NOW() THEN 1 
+        ELSE 0 
+      END as is_boosted
+    FROM properties p
+    LEFT JOIN cities c ON p.city_id = c.id
+    LEFT JOIN categories cat ON p.category_id = cat.id
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE p.id = ?
+  `;
+
+  db.query(sql, [propertyId], (err, propertyResults) => {
+    if (err) {
+      console.error('❌ Database error:', err);
+      return res.status(500).json({ 
+        error: 'Database error', 
+        details: err.message 
+      });
+    }
+
+    if (propertyResults.length === 0) {
+      console.log(`⚠️ Property ${propertyId} not found`);
+      return res.status(404).json({ 
+        error: 'Property not found',
+        message: 'Properti yang Anda cari tidak ditemukan'
+      });
+    }
+
+    const property = propertyResults[0];
+
+    // Query untuk mengambil semua gambar properti ini
+    const imagesSql = `
+      SELECT image_path, is_primary, display_order
+      FROM images 
+      WHERE property_id = ?
+      ORDER BY display_order
+    `;
+
+    db.query(imagesSql, [propertyId], (err, imagesResults) => {
+      if (err) {
+        console.error('❌ Error fetching images:', err);
+        return res.status(500).json({ 
+          error: 'Database error', 
+          details: err.message 
+        });
+      }
+
+      // ✅ Parse facilities jadi array
+      let facilitiesArray = [];
+      try {
+        if (typeof property.facilities === 'string') {
+          facilitiesArray = JSON.parse(property.facilities);
+        } else if (Array.isArray(property.facilities)) {
+          facilitiesArray = property.facilities;
+        }
+      } catch (e) {
+        console.error('Error parsing facilities:', e);
+        facilitiesArray = [];
+      }
+
+      // Format response dengan struktur yang sesuai dengan frontend
+      const response = {
+        id: property.id,
+        title: property.title,
+        nama: property.title, // alias untuk backward compatibility
+        type: property.type,
+        city: property.city,
+        alamat: property.address,
+        address: property.address, // alias
+        harga: Math.floor(property.price), // ✅ CONVERT ke integer untuk hilangkan .00
+        price: Math.floor(property.price), // alias
+        price_unit: property.price_unit,
+        priceUnit: property.price_unit, // alias
+        description: property.description,
+        facilities: facilitiesArray, // ✅ Return as array
+        owner_name: property.owner_name,
+        ownerName: property.owner_name, // alias
+        owner_whatsapp: property.owner_whatsapp,
+        whatsappNumber: property.owner_whatsapp, // alias
+        bedrooms: property.bedrooms,
+        bathrooms: property.bathrooms,
+        area: property.area,
+        status: property.status,
+        views: property.views,
+        whatsapp_clicks: property.whatsapp_clicks,
+        whatsappClicks: property.whatsapp_clicks, // alias
+        created_at: property.created_at,
+        createdAt: property.created_at, // alias
+        category_name: property.category_name,
+        uploader_name: property.uploader_name,
+        uploaderName: property.uploader_name, // alias
+        uploader_role: property.uploader_role,
+        uploaderRole: property.uploader_role, // alias
+        is_boosted: property.is_boosted,
+        boosted_until: property.boosted_until,
+        images: imagesResults.map(img => img.image_path)
+      };
+
+      // ✅ OPTIONAL: Update view count (increment views)
+      const updateViewsSql = 'UPDATE properties SET views = views + 1 WHERE id = ?';
+      db.query(updateViewsSql, [propertyId], (err) => {
+        if (err) {
+          console.error('⚠️ Error updating views:', err);
+        } else {
+          console.log(`✅ Views updated for property ${propertyId}`);
+        }
+      });
+
+      console.log(`✅ Property ${propertyId} detail sent with ${imagesResults.length} images`);
+      res.json(response);
+    });
+  });
+});
+
+
+// ========== GET PROPERTY DETAIL BY ID (UNTUK MITRA DASHBOARD) ==========
+app.get('/api/properties/:id', (req, res) => {
+  const propertyId = req.params.id;
+  
+  console.log(`📥 Fetching property detail for ID: ${propertyId}`);
+
+  // Query untuk mengambil detail properti
+  const sql = `
+    SELECT 
+      p.*,
+      c.name as city,
+      cat.name as category_name,
+      u.name as uploader_name,
+      u.role as uploader_role,
+      CASE 
+        WHEN p.boosted_until > NOW() THEN 1 
+        ELSE 0 
+      END as is_boosted,
+      CASE
+        WHEN p.boosted_until > NOW() 
+        THEN DATEDIFF(p.boosted_until, NOW())
+        ELSE 0
+      END as boost_days_remaining
+    FROM properties p
+    LEFT JOIN cities c ON p.city_id = c.id
+    LEFT JOIN categories cat ON p.category_id = cat.id
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE p.id = ?
+  `;
+
+  db.query(sql, [propertyId], (err, propertyResults) => {
+    if (err) {
+      console.error('❌ Database error:', err);
+      return res.status(500).json({ 
+        error: 'Database error', 
+        details: err.message 
+      });
+    }
+
+    if (propertyResults.length === 0) {
+      console.log(`⚠️ Property ${propertyId} not found`);
+      return res.status(404).json({ 
+        error: 'Property not found',
+        message: 'Properti yang Anda cari tidak ditemukan'
+      });
+    }
+
+    const property = propertyResults[0];
+
+    // Query untuk mengambil semua gambar properti
+    const imagesSql = `
+      SELECT image_path, is_primary, display_order
+      FROM images 
+      WHERE property_id = ?
+      ORDER BY display_order
+    `;
+
+    db.query(imagesSql, [propertyId], (err, imagesResults) => {
+      if (err) {
+        console.error('❌ Error fetching images:', err);
+        return res.status(500).json({ 
+          error: 'Database error', 
+          details: err.message 
+        });
+      }
+
+      // ✅ Parse facilities jadi array
+      let facilitiesArray = [];
+      try {
+        if (typeof property.facilities === 'string') {
+          facilitiesArray = JSON.parse(property.facilities);
+        } else if (Array.isArray(property.facilities)) {
+          facilitiesArray = property.facilities;
+        }
+      } catch (e) {
+        console.error('Error parsing facilities:', e);
+        facilitiesArray = [];
+      }
+
+      // Format response
+      const response = {
+        id: property.id,
+        title: property.title,
+        nama: property.title,
+        type: property.type,
+        city: property.city,
+        alamat: property.address,
+        address: property.address,
+        harga: Math.floor(property.price), // ✅ CONVERT ke integer untuk hilangkan .00
+        price: Math.floor(property.price),
+        price_unit: property.price_unit,
+        priceUnit: property.price_unit,
+        description: property.description,
+        facilities: facilitiesArray, // ✅ Return as array
+        owner_name: property.owner_name,
+        ownerName: property.owner_name,
+        owner_whatsapp: property.owner_whatsapp,
+        whatsappNumber: property.owner_whatsapp,
+        bedrooms: property.bedrooms,
+        bathrooms: property.bathrooms,
+        area: property.area,
+        status: property.status,
+        views: property.views,
+        whatsapp_clicks: property.whatsapp_clicks,
+        whatsappClicks: property.whatsapp_clicks,
+        created_at: property.created_at,
+        createdAt: property.created_at,
+        category_name: property.category_name,
+        uploader_name: property.uploader_name,
+        uploaderName: property.uploader_name,
+        uploader_role: property.uploader_role,
+        uploaderRole: property.uploader_role,
+        is_boosted: property.is_boosted,
+        is_featured: property.is_featured || 0,
+        boost_days_remaining: property.boost_days_remaining,
+        boosted_until: property.boosted_until,
+        images: imagesResults.map(img => img.image_path)
+      };
+
+      console.log(`✅ Property ${propertyId} detail sent with ${imagesResults.length} images`);
+      res.json(response);
+    });
+  });
+});
 
 
 

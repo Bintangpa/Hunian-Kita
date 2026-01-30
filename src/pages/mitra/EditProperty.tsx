@@ -41,6 +41,7 @@ export default function EditProperty() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [displayWhatsApp, setDisplayWhatsApp] = useState('');
+  const [displayPrice, setDisplayPrice] = useState('');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -115,6 +116,32 @@ const fetchFullUserData = async (userId: number) => {
     return 'kost';
   };
 
+  // Fungsi format harga dengan titik ribuan
+  const formatPriceDisplay = (value: string): string => {
+    // Hapus semua karakter non-digit
+    const numbers = value.replace(/\D/g, '');
+    
+    // Jika kosong, return empty string
+    if (!numbers) return '';
+    
+    // Format dengan titik pemisah ribuan
+    return numbers.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  };
+
+  // Handler untuk perubahan harga
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value;
+    
+    // Hapus semua karakter non-digit
+    const numbersOnly = inputValue.replace(/\D/g, '');
+    
+    // Update state formData dengan angka murni
+    setFormData(prev => ({ ...prev, price: numbersOnly }));
+    
+    // Update display dengan format ribuan
+    setDisplayPrice(formatPriceDisplay(numbersOnly));
+  };
+
   const fetchPropertyData = async () => {
     try {
       const response = await fetch(`http://localhost:3000/api/rumah/${id}`);
@@ -124,17 +151,29 @@ const fetchFullUserData = async (userId: number) => {
         // Normalisasi type dari database
         const normalizedType = normalizePropertyType(data.type);
         
-        console.log('Data dari API:', data);
-        console.log('Original type:', data.type);
-        console.log('Normalized type:', normalizedType);
+        console.log('📦 Data dari API:', data);
+        console.log('💰 Harga mentah dari API:', data.harga);
+        console.log('🔤 Tipe harga:', typeof data.harga);
+        
+        // ✅ PERBAIKAN: Bersihkan titik dari harga sebelum simpan
+        let priceValue = '';
+        if (data.harga !== null && data.harga !== undefined) {
+          // Convert ke string dulu
+          const priceStr = String(data.harga);
+          console.log('🔄 Harga as string:', priceStr);
+          
+          // Hapus SEMUA karakter non-digit (titik, koma, spasi, dll)
+          priceValue = priceStr.replace(/\D/g, '');
+          console.log('✅ Harga setelah dibersihkan:', priceValue);
+        }
         
         setFormData({
           title: data.nama || '',
-          type: normalizedType, // Gunakan normalized type
+          type: normalizedType,
           city: data.city || '',
           city_id: '',
           address: data.alamat || '',
-          price: data.harga?.toString() || '',
+          price: priceValue, // Simpan angka murni tanpa titik
           price_unit: data.priceUnit || 'bulan',
           description: data.description || '',
           facilities: data.facilities || [],
@@ -145,6 +184,11 @@ const fetchFullUserData = async (userId: number) => {
           bathrooms: data.bathrooms?.toString() || '1',
           area: data.area?.toString() || '',
         });
+        
+        // Set display price dengan format ribuan
+        const formattedPrice = formatPriceDisplay(priceValue);
+        console.log('💵 Display price:', formattedPrice);
+        setDisplayPrice(formattedPrice);
       } else {
         toast({
           title: 'Error',
@@ -186,6 +230,10 @@ const fetchFullUserData = async (userId: number) => {
 
     try {
       const uploadData = new FormData();
+      
+      // ✅ LOG: Debug harga sebelum dikirim
+      console.log('💾 Harga yang akan di-save:', formData.price);
+      console.log('💵 Display harga:', displayPrice);
       
       uploadData.append('title', formData.title);
       uploadData.append('type', formData.type); // Pastikan type ter-append
@@ -375,11 +423,15 @@ const fetchFullUserData = async (userId: number) => {
                 <Label htmlFor="price">Harga *</Label>
                 <Input
                   id="price"
-                  type="number"
-                  value={formData.price}
-                  onChange={(e) => setFormData(prev => ({ ...prev, price: e.target.value }))}
+                  type="text"
+                  value={displayPrice}
+                  onChange={handlePriceChange}
+                  placeholder="1.000.000"
                   required
                 />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Format: Rp {displayPrice || '0'}
+                </p>
               </div>
 
               <div>
