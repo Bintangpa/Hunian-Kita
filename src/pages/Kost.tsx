@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { MobileNav } from '@/components/MobileNav';
+import { PropertyCard } from '@/components/PropertyCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Home, Search, Clock } from 'lucide-react';
+import { ArrowLeft, Home, Search } from 'lucide-react';
 
 export default function Kost() {
   const navigate = useNavigate();
@@ -22,44 +23,7 @@ export default function Kost() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
-  // Format timestamp upload - SAMA SEPERTI DI PropertyCard.tsx
-  const formatTimeAgo = (uploadDate: string | Date): string => {
-    if (!uploadDate) return '';
-    
-    const now = new Date();
-    const uploaded = new Date(uploadDate);
-    const diffInMs = now.getTime() - uploaded.getTime();
-    const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
-    const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
-    
-    // Jika kurang dari 1 jam
-    if (diffInMinutes < 60) {
-      if (diffInMinutes < 1) return 'Baru saja';
-      return `${diffInMinutes} menit yang lalu`;
-    }
-    
-    // Jika kurang dari 24 jam (1 hari)
-    if (diffInHours < 24) {
-      return `${diffInHours} jam yang lalu`;
-    }
-    
-    // Jika kurang dari atau sama dengan 7 hari
-    if (diffInDays <= 7) {
-      return `${diffInDays} hari yang lalu`;
-    }
-    
-    // Jika lebih dari 7 hari, tampilkan tanggal
-    const options: Intl.DateTimeFormatOptions = { 
-      day: 'numeric', 
-      month: 'long', 
-      year: 'numeric' 
-    };
-    return uploaded.toLocaleDateString('id-ID', options);
-  };
-
   useEffect(() => {
-    // ✅ FIXED: Ganti dari /api/rumah ke /api/properties
     fetch('http://localhost:3000/api/properties')
       .then(res => res.json())
       .then(data => {
@@ -83,7 +47,6 @@ export default function Kost() {
   // Filter dan sort properties
   const filteredProperties = properties
     .filter(property => {
-      // ✅ Support both 'title' and 'nama' field
       const name = property.title || property.nama || '';
       const matchSearch = name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          property.city?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -191,12 +154,13 @@ export default function Kost() {
           </div>
         </section>
 
-        <main className="min-h-screen py-8 px-4">
-          <div className="container mx-auto max-w-7xl">
+        <main className="container mx-auto max-w-6xl px-4 py-8">
             {filteredProperties.length === 0 ? (
-              <div className="text-center py-16">
-                <Home className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-                <h2 className="text-2xl font-bold mb-2">
+              <div className="text-center py-16 bg-card rounded-lg border border-border">
+                <div className="mx-auto w-20 h-20 bg-muted rounded-full flex items-center justify-center mb-4">
+                  <Search className="w-10 h-10 text-muted-foreground" />
+                </div>
+                <h2 className="text-2xl font-bold text-foreground mb-2">
                   {properties.length === 0 ? 'Belum Ada Kost' : 'Tidak Ada Hasil'}
                 </h2>
                 <p className="text-muted-foreground mb-6">
@@ -217,161 +181,87 @@ export default function Kost() {
                 </Button>
               </div>
             ) : (
-              <div className="space-y-3">
-                {currentProperties.map((property) => {
-                  // ✅ Support both field names
-                  const title = property.title || property.nama;
-                  const price = property.price || property.harga;
-                  const priceUnit = property.price_unit || property.priceUnit;
-                  const ownerName = property.owner_name || property.ownerName;
-                  const whatsappNumber = property.owner_whatsapp || property.whatsappNumber;
-                  
-                  return (
-                    <div 
-                      key={property.id}
-                      className="bg-card border border-border rounded-lg overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                      onClick={() => navigate(`/property/${property.id}`)}
-                    >
-                      <div className="flex gap-4 p-3">
-                        <div className="flex-shrink-0">
-                          <img
-                            src={
-                              property.images && property.images.length > 0 
-                                ? `http://localhost:3000${property.images[0]}`
-                                : 'https://placehold.co/140x100'
-                            }
-                            alt={title}
-                            className="w-36 h-24 object-cover rounded"
-                            onError={(e) => {
-                              console.log('❌ Gagal load foto:', title, property.images);
-                              e.currentTarget.src = 'https://placehold.co/140x100';
-                            }}
-                          />
-                        </div>
-
-                        <div className="flex-1 flex flex-col justify-between py-1 min-w-0">
-                          <div className="space-y-1">
-                            <h3 className="text-lg font-bold line-clamp-1">{title}</h3>
-                            <p className="text-sm text-muted-foreground line-clamp-1">
-                              {property.city}
-                            </p>
-                            {formatTimeAgo(property.created_at || property.createdAt) && (
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Clock className="w-3 h-3" />
-                                <span>{formatTimeAgo(property.created_at || property.createdAt)}</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex items-end justify-between gap-4">
-                            <div>
-                              <p className="text-xl font-bold text-primary leading-tight">
-                                {new Intl.NumberFormat('id-ID', {
-                                  style: 'currency',
-                                  currency: 'IDR',
-                                  minimumFractionDigits: 0,
-                                  maximumFractionDigits: 0,
-                                }).format(price || 0)}
-                              </p>
-                              <span className="text-xs text-muted-foreground">/ {priceUnit}</span>
-                            </div>
-                            
-                            <Button 
-                              size="sm" 
-                              className="h-8 px-4"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const propertyUrl = `${window.location.origin}/property/${property.id}`;
-                                const message = encodeURIComponent(
-                                  `Halo ${ownerName || 'Pemilik'}, saya tertarik dengan ${title} di ${property.city}. Apakah masih tersedia? ${propertyUrl}`
-                                );
-                                window.open(`https://wa.me/${whatsappNumber}?text=${message}`, '_blank');
-                              }}
-                            >
-                              Hubungi
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Pagination Controls */}
-            {filteredProperties.length > 0 && totalPages > 1 && (
-              <div className="mt-8 flex flex-col items-center gap-4">
-                <p className="text-sm text-muted-foreground">
-                  Halaman {currentPage} dari {totalPages} ({filteredProperties.length} total properti)
-                </p>
-                <div className="flex gap-2 flex-wrap justify-center">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1}
-                  >
-                    Pertama
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                    disabled={currentPage === 1}
-                  >
-                    Sebelumnya
-                  </Button>
-                  
-                  {/* Page Numbers */}
-                  {Array.from({ length: totalPages }, (_, i) => i + 1)
-                    .filter(page => {
-                      // Tampilkan halaman saat ini, 2 sebelum, dan 2 sesudah
-                      return page === 1 || 
-                             page === totalPages || 
-                             (page >= currentPage - 2 && page <= currentPage + 2);
-                    })
-                    .map((page, index, array) => {
-                      // Tambahkan ellipsis jika ada gap
-                      const prevPage = array[index - 1];
-                      const showEllipsis = prevPage && page - prevPage > 1;
-                      
-                      return (
-                        <div key={page} className="flex gap-2">
-                          {showEllipsis && (
-                            <span className="px-3 py-1 text-muted-foreground">...</span>
-                          )}
-                          <Button
-                            variant={currentPage === page ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setCurrentPage(page)}
-                          >
-                            {page}
-                          </Button>
-                        </div>
-                      );
-                    })}
-                  
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                  >
-                    Berikutnya
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages}
-                  >
-                    Terakhir
-                  </Button>
+              <>
+                {/* Grid Layout dengan PropertyCard */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {currentProperties.map((property) => (
+                    <PropertyCard key={property.id} property={property} />
+                  ))}
                 </div>
-              </div>
+
+                {/* Pagination Controls */}
+                {totalPages > 1 && (
+                  <div className="mt-8 flex flex-col items-center gap-4">
+                    <p className="text-sm text-muted-foreground">
+                      Halaman {currentPage} dari {totalPages} ({filteredProperties.length} total properti)
+                    </p>
+                    <div className="flex gap-2 flex-wrap justify-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(1)}
+                        disabled={currentPage === 1}
+                      >
+                        Pertama
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                        disabled={currentPage === 1}
+                      >
+                        Sebelumnya
+                      </Button>
+                      
+                      {/* Page Numbers */}
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(page => {
+                          return page === 1 || 
+                                 page === totalPages || 
+                                 (page >= currentPage - 2 && page <= currentPage + 2);
+                        })
+                        .map((page, index, array) => {
+                          const prevPage = array[index - 1];
+                          const showEllipsis = prevPage && page - prevPage > 1;
+                          
+                          return (
+                            <div key={page} className="flex gap-2">
+                              {showEllipsis && (
+                                <span className="px-3 py-1 text-muted-foreground">...</span>
+                              )}
+                              <Button
+                                variant={currentPage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setCurrentPage(page)}
+                              >
+                                {page}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                      >
+                        Berikutnya
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(totalPages)}
+                        disabled={currentPage === totalPages}
+                      >
+                        Terakhir
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
-          </div>
-        </main>
+          </main>
       </div>
 
       <Footer />

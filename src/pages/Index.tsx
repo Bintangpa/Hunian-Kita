@@ -247,7 +247,7 @@ export default function Index() {
           </p>
         </div>
 
-        {/* SECTION BOOSTED PROPERTIES */}
+        {/* ✅ SECTION BOOSTED PROPERTIES - TAMPILAN GRID VERTIKAL */}
         {filteredBoostedListings.length > 0 && (
           <div className="mb-12">
             {/* Header Section */}
@@ -259,36 +259,11 @@ export default function Index() {
               </span>
             </div>
             
-            {/* Horizontal Scroll Container */}
-            <div className="relative">
-              <div 
-                className="flex gap-6 overflow-x-auto pb-4 snap-x snap-mandatory"
-                style={{
-                  scrollbarWidth: 'none',
-                  msOverflowStyle: 'none',
-                  WebkitOverflowScrolling: 'touch'
-                }}
-              >
-                {filteredBoostedListings.map((property) => (
-                  <div 
-                    key={property.id} 
-                    className="flex-none w-[320px] md:w-[360px] snap-start"
-                  >
-                    <PropertyCard property={property} />
-                  </div>
-                ))}
-              </div>
-              
-              {/* Scroll Indicator */}
-              {filteredBoostedListings.length > 3 && (
-                <div className="flex justify-center gap-2 mt-4">
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>Scroll untuk melihat lebih banyak</span>
-                    <ArrowRight className="w-4 h-4" />
-                  </div>
-                </div>
-              )}
+            {/* ✅ GRID VERTIKAL SEPERTI REGULAR PROPERTIES */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredBoostedListings.map((property) => (
+                <PropertyCard key={property.id} property={property} />
+              ))}
             </div>
           </div>
         )}
