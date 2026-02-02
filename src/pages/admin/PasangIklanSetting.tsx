@@ -11,6 +11,13 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
+// Helper function untuk format Rupiah
+const formatRupiah = (amount: number): string => {
+  // Konversi ke integer untuk menghilangkan desimal
+  const intAmount = Math.floor(amount);
+  return intAmount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+};
+
 interface Hero {
   id: number;
   title: string;
@@ -890,7 +897,7 @@ export default function PasangIklanSetting() {
                             )}
                           </div>
                           <p className="text-2xl font-bold text-primary mb-1">
-                            Rp {plan.price.toLocaleString('id-ID')}
+                            Rp {formatRupiah(plan.price)}
                             {plan.period && <span className="text-sm text-muted-foreground"> / {plan.period}</span>}
                           </p>
                           <p className="text-sm text-muted-foreground mb-3">{plan.description}</p>
@@ -995,7 +1002,7 @@ export default function PasangIklanSetting() {
                           </div>
                           <p className="text-sm text-muted-foreground">Token</p>
                           <p className="text-xl font-semibold mt-2">
-                            Rp {pkg.price.toLocaleString('id-ID')}
+                            Rp {formatRupiah(pkg.price)}
                           </p>
                         </div>
                         <div className="flex gap-2">

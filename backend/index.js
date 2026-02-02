@@ -108,12 +108,25 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
       const userRole = userResults[0].role;
       
       // ✅ VALIDASI TOKEN (HANYA UNTUK MITRA)
-      if (userRole === 'mitra' && userTokens < 15) {
-        return res.status(403).json({
-          success: false,
-          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan 15 token untuk upload properti.`
-        });
-      }
+      
+      // ✅ AMBIL SETTING BIAYA UPLOAD DARI DATABASE
+      const getUploadCostSql = 'SELECT setting_value FROM token_settings WHERE setting_key = "upload_property_cost"';
+      
+      db.query(getUploadCostSql, (err, settingResults) => {
+        if (err) {
+          console.error('❌ Error getting upload cost:', err);
+          return res.status(500).json({ success: false, message: 'Error getting token cost' });
+        }
+        
+        const uploadCost = settingResults[0]?.setting_value || 15;
+        
+        // ✅ VALIDASI TOKEN (HANYA UNTUK MITRA)
+        if (userRole === 'mitra' && userTokens < uploadCost) {
+          return res.status(403).json({
+            success: false,
+            message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan ${uploadCost} token untuk upload properti.`
+          });
+        }
       
       // ✅ VALIDASI FOTO WAJIB ADA
       if (!req.files || req.files.length === 0) {
@@ -199,12 +212,12 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
             .then(() => {
               // ✅ KURANGI TOKEN SETELAH BERHASIL UPLOAD (HANYA UNTUK MITRA)
               if (userRole === 'mitra') {
-                const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
-                db.query(updateTokenSql, [user_id], (err) => {
+                const updateTokenSql = `UPDATE users SET tokens = tokens - ? WHERE id = ?`;
+                db.query(updateTokenSql, [uploadCost, user_id], (err) => {
                   if (err) {
                     console.error('❌ Error updating tokens:', err);
                   } else {
-                    console.log(`✅ Token reduced: User ${user_id} now has ${userTokens - 15} tokens`);
+                    console.log(`✅ Token reduced: User ${user_id} now has ${userTokens - uploadCost} tokens`);
                   }
                 });
               }
@@ -212,9 +225,9 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
               console.log(`✅ Property uploaded! ID: ${propertyId}, Images: ${imagePaths.length}`);
               res.json({
                 success: true,
-                message: 'Properti berhasil diupload! Token Anda dikurangi 15.',
+                message: `Properti berhasil diupload! Token Anda dikurangi ${uploadCost}.`,
                 propertyId: propertyId,
-                remainingTokens: userRole === 'mitra' ? userTokens - 15 : null
+                remainingTokens: userRole === 'mitra' ? userTokens - uploadCost : null
               });
             })
             .catch(err => {
@@ -274,7 +287,9 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
           message: 'Kota harus diisi'
         });
       }
-    });
+
+      }); // End of getUploadCostSql query
+    }); // End of checkTokenSql query
 
   } catch (error) {
     console.error('❌ Upload error:', error);
@@ -610,174 +625,7 @@ app.post('/api/properties', upload.array('images', 5), (req, res) => {
       const userTokens = userResults[0].tokens;
       const userRole = userResults[0].role;
       
-      // ✅ VALIDASI TOKEN (HANYA UNTUK MITRA)
-      if (userRole === 'mitra' && userTokens < 15) {
-        return res.status(403).json({
-          success: false,
-          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan 15 token untuk upload properti.`
-        });
-      }
-      
-      // ✅ VALIDASI FOTO WAJIB ADA
-      if (!req.files || req.files.length === 0) {
-        return res.status(400).json({
-          success: false,
-          message: 'Minimal 1 foto harus diupload'
-        });
-      }
-
-      // ✅ PROSES UPLOAD FOTO
-      let imagePaths = [];
-      if (req.files && req.files.length > 0) {
-        imagePaths = req.files.map(file => `/uploads/${file.filename}`);
-      }
-
-      let facilitiesArray = [];
-      if (facilities) {
-        try {
-          facilitiesArray = typeof facilities === 'string' 
-            ? JSON.parse(facilities) 
-            : facilities;
-        } catch (e) {
-          facilitiesArray = [];
-        }
-      }
-
-      let finalCategoryId = category_id;
-      if (!finalCategoryId) {
-        const typeMap = { 'kost': 1, 'guesthouse': 2, 'villa': 3 };
-        finalCategoryId = typeMap[type.toLowerCase()] || 1;
-      }
-
-      const insertProperty = (finalCityId) => {
-        const facilitiesJson = JSON.stringify(facilitiesArray);
-
-        // ✅ STEP 1: INSERT PROPERTI (TANPA KOLOM IMAGE)
-        const sql = `
-          INSERT INTO properties (
-            user_id, title, type, category_id, city_id, address, price, price_unit,
-            description, facilities, owner_name, owner_whatsapp, 
-            bedrooms, bathrooms, area, status, views, whatsapp_clicks, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', 0, 0, NOW())
-        `;
-
-        const values = [
-          user_id, title, type.toLowerCase(), finalCategoryId, finalCityId,
-          address, parseFloat(price), price_unit || 'bulan', description || '',
-          facilitiesJson, owner_name, owner_whatsapp,
-          parseInt(bedrooms) || 1, parseInt(bathrooms) || 1, parseFloat(area) || 0
-        ];
-
-        db.query(sql, values, (err, result) => {
-          if (err) {
-            console.error('❌ Insert property error:', err);
-            return res.status(500).json({
-              success: false,
-              message: 'Gagal menyimpan properti',
-              error: err.message
-            });
-          }
-
-          const propertyId = result.insertId;
-
-          // ✅ STEP 2: INSERT SEMUA FOTO KE TABEL IMAGES
-          const imageInserts = imagePaths.map((path, index) => {
-            return new Promise((resolve, reject) => {
-              const insertImageSql = `
-                INSERT INTO images (property_id, image_path, is_primary, display_order, created_at)
-                VALUES (?, ?, ?, ?, NOW())
-              `;
-              const isPrimary = index === 0 ? 1 : 0; // Foto pertama jadi primary
-              const displayOrder = index + 1;
-
-              db.query(insertImageSql, [propertyId, path, isPrimary, displayOrder], (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            });
-          });
-
-          // ✅ JALANKAN SEMUA INSERT FOTO
-          Promise.all(imageInserts)
-            .then(() => {
-              // ✅ KURANGI TOKEN SETELAH BERHASIL UPLOAD (HANYA UNTUK MITRA)
-              if (userRole === 'mitra') {
-                const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
-                db.query(updateTokenSql, [user_id], (err) => {
-                  if (err) {
-                    console.error('❌ Error updating tokens:', err);
-                  } else {
-                    console.log(`✅ Token reduced: User ${user_id} now has ${userTokens - 15} tokens`);
-                  }
-                });
-              }
-
-              console.log(`✅ Property uploaded! ID: ${propertyId}, Images: ${imagePaths.length}`);
-              res.json({
-                success: true,
-                message: 'Properti berhasil diupload! Token Anda dikurangi 15.',
-                propertyId: propertyId,
-                remainingTokens: userRole === 'mitra' ? userTokens - 15 : null
-              });
-            })
-            .catch(err => {
-              console.error('❌ Error inserting images:', err);
-              res.status(500).json({
-                success: false,
-                message: 'Properti tersimpan tapi gagal menyimpan foto',
-                error: err.message
-              });
-            });
-        });
-      };
-
-      // Logic untuk city_id (sama seperti sebelumnya)
-      let finalCityId = city_id;
-      if (!finalCityId && city) {
-        const checkCitySql = 'SELECT id FROM cities WHERE LOWER(name) = LOWER(?) OR LOWER(slug) = LOWER(?)';
-        const citySlug = city.toLowerCase().replace(/\s+/g, '-');
-        
-        db.query(checkCitySql, [city, citySlug], (err, cityResults) => {
-          if (err) {
-            console.error('❌ Error checking city:', err);
-            return res.status(500).json({
-              success: false,
-              message: 'Gagal mengecek data kota',
-              error: err.message
-            });
-          }
-          
-          if (cityResults.length > 0) {
-            finalCityId = cityResults[0].id;
-            console.log('✅ City found:', city, 'with ID:', finalCityId);
-            insertProperty(finalCityId);
-          } else {
-            const insertCitySql = 'INSERT INTO cities (name, slug) VALUES (?, ?)';
-            db.query(insertCitySql, [city, citySlug], (err, cityInsertResult) => {
-              if (err) {
-                console.error('❌ Error inserting city:', err);
-                return res.status(500).json({
-                  success: false,
-                  message: 'Gagal menambahkan kota baru',
-                  error: err.message
-                });
-              }
-              
-              console.log('✅ City added:', city, 'with ID:', cityInsertResult.insertId);
-              finalCityId = cityInsertResult.insertId;
-              insertProperty(finalCityId);
-            });
-          }
-        });
-      } else if (finalCityId) {
-        insertProperty(finalCityId);
-      } else {
-        return res.status(400).json({
-          success: false,
-          message: 'Kota harus diisi'
-        });
-      }
-    });
+    }); // End of checkTokenSql query
 
   } catch (error) {
     console.error('❌ Upload error:', error);
@@ -2294,74 +2142,86 @@ app.post('/api/properties/:id/boost', (req, res) => {
       });
     }
     
-    // ✅ STEP 2: Cek token user
-    const checkTokenSql = 'SELECT tokens FROM users WHERE id = ?';
+    // ✅ STEP 2: AMBIL BIAYA BOOST DARI DATABASE
+    const getBoostCostSql = 'SELECT setting_value FROM token_settings WHERE setting_key = "boost_property_cost"';
     
-    db.query(checkTokenSql, [user_id], (err, userResults) => {
+    db.query(getBoostCostSql, (err, settingResults) => {
       if (err) {
-        console.error('❌ Error checking tokens:', err);
-        return res.status(500).json({
-          success: false,
-          message: 'Terjadi kesalahan saat mengecek token'
-        });
+        console.error('❌ Error getting boost cost:', err);
+        return res.status(500).json({ success: false, message: 'Error getting token cost' });
       }
       
-      if (userResults.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'User tidak ditemukan'
-        });
-      }
+      const boostCost = settingResults[0]?.setting_value || 15;
       
-      const userTokens = userResults[0].tokens;
+      // ✅ STEP 3: Cek token user
+      const checkTokenSql = 'SELECT tokens FROM users WHERE id = ?';
       
-      if (userTokens < 15) {
-        return res.status(403).json({
-          success: false,
-          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan 15 token untuk boost properti.`
-        });
-      }
-      
-      // ✅ STEP 3: Hitung tanggal berakhir (7 hari dari sekarang)
-      const now = new Date();
-      const boostUntil = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000)); // +7 hari
-      
-      // ✅ STEP 4: Update properti dengan boost
-      const updatePropertySql = `
-        UPDATE properties 
-        SET boosted_until = ?, boost_activated_at = NOW() 
-        WHERE id = ?
-      `;
-      
-      db.query(updatePropertySql, [boostUntil, propertyId], (err) => {
+      db.query(checkTokenSql, [user_id], (err, userResults) => {
         if (err) {
-          console.error('❌ Error updating property:', err);
+          console.error('❌ Error checking tokens:', err);
           return res.status(500).json({
             success: false,
-            message: 'Gagal mengaktifkan boost'
+            message: 'Terjadi kesalahan saat mengecek token'
           });
         }
         
-        // ✅ STEP 5: Kurangi token user
-        const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
+        if (userResults.length === 0) {
+          return res.status(404).json({
+            success: false,
+            message: 'User tidak ditemukan'
+          });
+        }
         
-        db.query(updateTokenSql, [user_id], (err) => {
+        const userTokens = userResults[0].tokens;
+        
+        if (userTokens < boostCost) {
+          return res.status(403).json({
+            success: false,
+            message: `Token tidak mencukupi! Anda memiliki ${userTokens} token, dibutuhkan ${boostCost} token untuk boost properti.`
+          });
+        }
+        
+        // ✅ STEP 4: Hitung tanggal berakhir (7 hari dari sekarang)
+        const now = new Date();
+        const boostUntil = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000)); // +7 hari
+        
+        // ✅ STEP 5: Update properti dengan boost
+        const updatePropertySql = `
+          UPDATE properties 
+          SET boosted_until = ?, boost_activated_at = NOW() 
+          WHERE id = ?
+        `;
+        
+        db.query(updatePropertySql, [boostUntil, propertyId], (err) => {
           if (err) {
-            console.error('❌ Error updating tokens:', err);
+            console.error('❌ Error updating property:', err);
             return res.status(500).json({
               success: false,
-              message: 'Boost berhasil tapi gagal mengurangi token'
+              message: 'Gagal mengaktifkan boost'
             });
           }
           
-          console.log(`✅ Property ${propertyId} boosted until ${boostUntil}`);
-          console.log(`✅ User ${user_id} tokens reduced by 15`);
+          // ✅ STEP 6: Kurangi token user
+          const updateTokenSql = 'UPDATE users SET tokens = tokens - ? WHERE id = ?';
           
-          res.json({
-            success: true,
-            message: 'Properti berhasil di-boost selama 7 hari!',
-            boosted_until: boostUntil,
-            remaining_tokens: userTokens - 15
+          db.query(updateTokenSql, [boostCost, user_id], (err) => {
+            if (err) {
+              console.error('❌ Error updating tokens:', err);
+              return res.status(500).json({
+                success: false,
+                message: 'Boost berhasil tapi gagal mengurangi token'
+              });
+            }
+            
+            console.log(`✅ Property ${propertyId} boosted until ${boostUntil}`);
+            console.log(`✅ User ${user_id} tokens reduced by ${boostCost}`);
+            
+            res.json({
+              success: true,
+              message: `Properti berhasil di-boost selama 7 hari! Token dikurangi ${boostCost}.`,
+              boosted_until: boostUntil,
+              remaining_tokens: userTokens - boostCost
+            });
           });
         });
       });
@@ -2608,66 +2468,6 @@ app.get('/api/properties', (req, res) => {
       console.log(`   📋 Regular: ${regularCount}`);
       
       res.json(propertiesWithImages);
-    });
-  });
-});
-
-app.post('/api/properties/:id/boost', (req, res) => {
-  const propertyId = req.params.id;
-  const { user_id } = req.body;
-  
-  if (!user_id) {
-    return res.status(400).json({ success: false, message: 'User ID tidak ditemukan' });
-  }
-  
-  const checkOwnerSql = 'SELECT user_id FROM properties WHERE id = ?';
-  db.query(checkOwnerSql, [propertyId], (err, propertyResults) => {
-    if (err || propertyResults.length === 0) {
-      return res.status(404).json({ success: false, message: 'Properti tidak ditemukan' });
-    }
-    
-    if (propertyResults[0].user_id !== parseInt(user_id)) {
-      return res.status(403).json({ success: false, message: 'Tidak ada akses' });
-    }
-    
-    const checkTokenSql = 'SELECT tokens FROM users WHERE id = ?';
-    db.query(checkTokenSql, [user_id], (err, userResults) => {
-      if (err || userResults.length === 0) {
-        return res.status(404).json({ success: false, message: 'User tidak ditemukan' });
-      }
-      
-      const userTokens = userResults[0].tokens;
-      if (userTokens < 15) {
-        return res.status(403).json({
-          success: false,
-          message: `Token tidak mencukupi! Anda memiliki ${userTokens} token.`
-        });
-      }
-      
-      const now = new Date();
-      const boostUntil = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
-      
-      const updatePropertySql = 'UPDATE properties SET boosted_until = ?, boost_activated_at = NOW() WHERE id = ?';
-      db.query(updatePropertySql, [boostUntil, propertyId], (err) => {
-        if (err) {
-          return res.status(500).json({ success: false, message: 'Gagal boost' });
-        }
-        
-        const updateTokenSql = 'UPDATE users SET tokens = tokens - 15 WHERE id = ?';
-        db.query(updateTokenSql, [user_id], (err) => {
-          if (err) {
-            return res.status(500).json({ success: false, message: 'Boost berhasil tapi token gagal dikurangi' });
-          }
-          
-          console.log(`✅ Property ${propertyId} boosted until ${boostUntil}`);
-          res.json({
-            success: true,
-            message: 'Properti berhasil di-boost selama 7 hari!',
-            boosted_until: boostUntil,
-            remaining_tokens: userTokens - 15
-          });
-        });
-      });
     });
   });
 });
@@ -2928,8 +2728,65 @@ app.get('/api/properties/:id', (req, res) => {
   });
 });
 
+// GET Token Settings
 
+// ========== API ADMIN: GET TOKEN SETTINGS ==========
+app.get('/api/admin/token-settings', (req, res) => {
+  const sql = 'SELECT * FROM token_settings';
+  
+  db.query(sql, (err, results) => {
+    if (err) {
+      console.error('❌ Error fetching token settings:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    res.json({ 
+      success: true, 
+      data: results 
+    });
+  });
+});
 
+// ========== API ADMIN: UPDATE TOKEN SETTINGS ==========
+app.put('/api/admin/token-settings/:key', (req, res) => {
+  const { key } = req.params;
+  const { value } = req.body;
+  
+  if (!value || value < 1) {
+    return res.status(400).json({ 
+      success: false, 
+      message: 'Nilai token harus minimal 1' 
+    });
+  }
+  
+  const sql = 'UPDATE token_settings SET setting_value = ? WHERE setting_key = ?';
+  
+  db.query(sql, [value, key], (err, result) => {
+    if (err) {
+      console.error('❌ Error updating token settings:', err);
+      return res.status(500).json({ 
+        success: false, 
+        message: 'Database error' 
+      });
+    }
+    
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Setting key tidak ditemukan' 
+      });
+    }
+    
+    console.log(`✅ Token setting updated: ${key} = ${value}`);
+    res.json({ 
+      success: true, 
+      message: 'Setting berhasil diupdate' 
+    });
+  });
+});
 
 // Jalankan server
 const PORT = 3000;

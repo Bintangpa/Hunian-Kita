@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import AdminIsiToken from './AdminIsiToken'; 
 import PasangIklanSetting from './PasangIklanSetting';
+import SettingUpload from './SettingUpload';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Building2, Users, Home, LogOut, Search, Mail, 
   Phone, Calendar, Trash2, UserCheck, UserX, Settings, Lock, Eye, EyeOff,
-  PlusCircle, Coins, Menu, X
+  PlusCircle, Coins, Menu, X, Upload
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
@@ -320,6 +321,12 @@ export default function AdminDashboard() {
       action: 'page' // Halaman placeholder
     },
     { 
+      id: 'setting-upload', 
+      label: 'Setting Upload', 
+      icon: Upload,
+      action: 'page'
+    },
+    { 
       id: 'pengaturan', 
       label: 'Pengaturan', 
       icon: Settings,
@@ -518,6 +525,9 @@ export default function AdminDashboard() {
       
       case 'isi-token':
         return <AdminIsiToken />;
+      
+      case 'setting-upload':
+        return <SettingUpload />;
       
       default:
         return null;

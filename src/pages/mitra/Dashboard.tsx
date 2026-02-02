@@ -175,6 +175,8 @@ export default function MitraDashboard() {
   const [boostDialogOpen, setBoostDialogOpen] = useState(false);
 const [propertyToBoost, setPropertyToBoost] = useState<Property | null>(null);
 const [isBoostingProperty, setIsBoostingProperty] = useState(false);
+const [uploadCost, setUploadCost] = useState<number>(15);
+const [boostCost, setBoostCost] = useState<number>(15);
 
   // Tutup dropdown kota saat klik di luar
 useEffect(() => {
@@ -229,6 +231,7 @@ useEffect(() => {
       fetchUserTokens(parsedUser.id);
       fetchProperties(parsedUser.id);
       fetchIndonesiaCities();
+      fetchTokenSettings();
     } catch (error) {
       console.error('❌ ERROR FETCH USER:', error);
       // Fallback ke localStorage jika API gagal
@@ -241,6 +244,7 @@ useEffect(() => {
       fetchUserTokens(parsedUser.id);
       fetchProperties(parsedUser.id);
       fetchIndonesiaCities();
+      fetchTokenSettings();
     }
   };
   
@@ -377,6 +381,27 @@ useEffect(() => {
   }
 };
 
+const fetchTokenSettings = async () => {
+  try {
+    const response = await fetch('http://localhost:3000/api/admin/token-settings');
+    const result = await response.json();
+    
+    if (result.success) {
+      const settings = result.data;
+      
+      const uploadSetting = settings.find((s: any) => s.setting_key === 'upload_property_cost');
+      const boostSetting = settings.find((s: any) => s.setting_key === 'boost_property_cost');
+      
+      if (uploadSetting) setUploadCost(uploadSetting.setting_value);
+      if (boostSetting) setBoostCost(boostSetting.setting_value);
+      
+      console.log('✅ Token settings loaded - Upload:', uploadSetting?.setting_value, 'Boost:', boostSetting?.setting_value);
+    }
+  } catch (error) {
+    console.error('Error fetching token settings:', error);
+  }
+};
+
 
 
   const fetchProperties = async (userId: number) => {
@@ -482,11 +507,14 @@ const handleSubmit = async (e: React.FormEvent) => {
   
   if (!user) return;
 
-  // ✅ Validasi token
-  if (userTokens < 15) {
+  // ✅ REFRESH BIAYA UPLOAD TERBARU DARI DATABASE DULU!
+  await fetchTokenSettings();
+
+  // ✅ Validasi token PAKAI uploadCost yang terbaru
+  if (userTokens < uploadCost) {
     toast({
       title: 'Token Tidak Cukup! 🪙',
-      description: `Anda hanya memiliki ${userTokens} token. Dibutuhkan 15 token untuk upload properti.`,
+      description: `Anda hanya memiliki ${userTokens} token. Dibutuhkan ${uploadCost} token untuk upload properti.`,
       variant: 'destructive',
     });
     return;
@@ -586,17 +614,13 @@ if (totalSize > maxSize) {
 
       
       if (response.ok && result.success) {
-    const newTokens = userTokens - 15;
-    setUserTokens(newTokens); // Update tokens di UI
-    
-    // ✅ UPDATE LOCALSTORAGE
-    const updatedUser = { ...user, tokens: newTokens };
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-    setUser(updatedUser); // Update state user juga
+    // ✅ JANGAN potong token di frontend, backend udah potong!
+    // ✅ Fetch token terbaru dari backend untuk update UI
+    await fetchUserTokens(user.id);
     
     toast({
       title: 'Berhasil! 🎉',
-      description: `Properti berhasil diupload! Token Anda: ${newTokens} (dikurangi 15)`,
+      description: `Properti berhasil diupload! Token Anda dikurangi ${uploadCost}`,
     });
     setIsDialogOpen(false);
     resetForm();
@@ -723,7 +747,9 @@ console.log('🔍 USER DATA DI FORM:', user);
     );
   }
 
-  const handleBoostClick = (property: Property) => {
+  const handleBoostClick = async (property: Property) => {
+  // ✅ REFRESH BIAYA BOOST TERBARU
+  await fetchTokenSettings();
   setPropertyToBoost(property);
   setBoostDialogOpen(true);
 };
@@ -731,10 +757,13 @@ console.log('🔍 USER DATA DI FORM:', user);
 const handleBoostConfirm = async () => {
   if (!propertyToBoost || !user?.id) return;
 
-  if (userTokens < 15) {
+  // ✅ REFRESH BIAYA BOOST TERBARU DARI DATABASE DULU!
+  await fetchTokenSettings();
+
+  if (userTokens < boostCost) {
     toast({
       title: 'Token tidak mencukupi',
-      description: `Anda memiliki ${userTokens} token. Dibutuhkan 15 token.`,
+      description: `Anda memiliki ${userTokens} token. Dibutuhkan ${boostCost} token.`,
       variant: 'destructive'
     });
     setBoostDialogOpen(false);
@@ -852,7 +881,7 @@ const handleBoostConfirm = async () => {
         <>
           <div className="text-2xl font-bold text-primary">{userTokens}</div>
           <p className="text-xs text-muted-foreground">
-            15 token per upload properti
+            {uploadCost} token per upload properti
           </p>
         </>
       )}
@@ -865,12 +894,15 @@ const handleBoostConfirm = async () => {
   <Button 
     size="lg" 
     className="gap-2" 
-    onClick={() => setIsDialogOpen(true)}
-    disabled={userTokens < 15}
+    onClick={async () => {
+      await fetchTokenSettings();
+      setIsDialogOpen(true);
+    }}
+    disabled={userTokens < uploadCost}
   >
     <Plus className="w-5 h-5" />
     Tambah Properti Baru
-    {userTokens < 15 && (
+    {userTokens < uploadCost && (
       <span className="ml-2 text-xs">(Token tidak cukup)</span>
     )}
   </Button>
@@ -1359,9 +1391,9 @@ const handleBoostConfirm = async () => {
       <AlertDialogDescription className="space-y-3">
         <p>Boost properti <strong>{propertyToBoost?.nama}</strong></p>
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
-          <p className="text-sm font-medium">Biaya: 15 Token</p>
+          <p className="text-sm font-medium">Biaya: {boostCost} Token</p>
           <p className="text-sm">Token saat ini: {userTokens}</p>
-          <p className="text-sm">Sisa: {userTokens - 15} Token</p>
+          <p className="text-sm">Sisa: {userTokens - boostCost} Token</p>
         </div>
       </AlertDialogDescription>
     </AlertDialogHeader>
@@ -1369,7 +1401,7 @@ const handleBoostConfirm = async () => {
       <AlertDialogCancel>Batal</AlertDialogCancel>
       <AlertDialogAction
         onClick={handleBoostConfirm}
-        disabled={isBoostingProperty || userTokens < 15}
+        disabled={isBoostingProperty || userTokens < boostCost}
         className="bg-yellow-500 hover:bg-yellow-600"
       >
         {isBoostingProperty ? 'Memproses...' : 'Ya, Boost Sekarang'}
