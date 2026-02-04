@@ -109,12 +109,8 @@ export default function Login() {
                   <Label htmlFor="password" className="text-sm font-medium">
                     Password
                   </Label>
-                  <Link
-                    to="/forgot-password"
-                    className="text-sm text-primary hover:underline"
-                  >
-                    Lupa password?
-                  </Link>
+                  
+
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
@@ -187,18 +183,6 @@ export default function Login() {
               </p>
             </div>
           </div>
-
-          {/* Additional Info */}
-          <p className="text-center text-sm text-muted-foreground mt-6">
-            Dengan masuk, Anda menyetujui{" "}
-            <Link to="/terms" className="text-primary hover:underline">
-              Syarat & Ketentuan
-            </Link>{" "}
-            dan{" "}
-            <Link to="/privacy" className="text-primary hover:underline">
-              Kebijakan Privasi
-            </Link>
-          </p>
         </div>
       </main>
     </div>
