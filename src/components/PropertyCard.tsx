@@ -189,6 +189,9 @@ export function PropertyCard({ property }: PropertyCardProps) {
           <img
             src={imageUrl}
             alt={title}
+            // ✅ Tambah loading="lazy" dan decoding="async" — browser otomatis skip load gambar yang belum di-scroll
+            loading="lazy"
+            decoding="async"
             className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
             onError={(e) => {
               console.error('Image load error:', imageUrl);

@@ -2,7 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+/* Font dengan font-display swap untuk faster rendering */
+@layer base {
+  /* Font loading optimization - swap untuk instant text rendering */
+  @font-face {
+    font-family: 'Plus Jakarta Sans';
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: local('Plus Jakarta Sans');
+  }
+}
 
 @layer base {
   :root {
@@ -113,11 +123,16 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Plus Jakarta Sans', sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-semibold tracking-tight;
+  }
+
+  /* Optimize image rendering */
+  img {
+    content-visibility: auto;
   }
 }
 
@@ -125,20 +140,26 @@
   .card-property {
     @apply bg-card rounded-xl overflow-hidden transition-all duration-300;
     box-shadow: var(--shadow-card);
+    /* GPU acceleration untuk smooth animation */
+    will-change: transform, box-shadow;
+    transform: translateZ(0);
   }
 
   .card-property:hover {
     box-shadow: var(--shadow-card-hover);
-    transform: translateY(-4px);
+    transform: translateY(-4px) translateZ(0);
   }
 
   .btn-whatsapp {
     @apply bg-whatsapp text-whatsapp-foreground font-semibold px-6 py-3 rounded-xl inline-flex items-center gap-2 transition-all duration-200;
     box-shadow: var(--shadow-whatsapp);
+    will-change: transform, opacity;
+    transform: translateZ(0);
   }
 
   .btn-whatsapp:hover {
     @apply opacity-90 scale-105;
+    transform: scale(1.05) translateZ(0);
   }
 
   .badge-sponsored {
@@ -168,6 +189,7 @@
 
   .filter-chip {
     @apply px-4 py-2 rounded-full text-sm font-medium border border-border bg-card transition-all duration-200;
+    will-change: background-color, border-color;
   }
 
   .filter-chip:hover {
@@ -217,5 +239,11 @@
       opacity: 1;
       transform: scale(1);
     }
+  }
+
+  /* GPU acceleration utilities */
+  .gpu-accelerate {
+    transform: translateZ(0);
+    will-change: transform;
   }
 }

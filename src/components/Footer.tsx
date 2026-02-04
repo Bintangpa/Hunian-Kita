@@ -12,8 +12,11 @@ interface FooterSettings {
   footer_copyright: string;
 }
 
+// Cache di luar component — supaya kalau Footer re-mount nggak fetch ulang
+let cachedSettings: FooterSettings | null = null;
+
 export function Footer() {
-  const [settings, setSettings] = useState<FooterSettings>({
+  const [settings, setSettings] = useState<FooterSettings>(cachedSettings || {
     footer_brand_name: 'HunianKita',
     footer_description: 'Platform pencarian hunian terlengkap di Indonesia.',
     footer_instagram: '#',
@@ -24,6 +27,8 @@ export function Footer() {
   });
 
   useEffect(() => {
+    // Kalau sudah ada di cache, skip fetch
+    if (cachedSettings) return;
     loadFooterSettings();
   }, []);
 
@@ -32,6 +37,7 @@ export function Footer() {
       const response = await fetch('http://localhost:3000/api/settings/footer');
       if (response.ok) {
         const data = await response.json();
+        cachedSettings = data; // Simpan ke cache
         setSettings(data);
       }
     } catch (error) {

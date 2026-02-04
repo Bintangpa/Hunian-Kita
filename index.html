@@ -3,6 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- DNS Prefetch untuk koneksi lebih cepat -->
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
+    
+    <!-- Preconnect untuk koneksi critical resources -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    
+    <!-- Preload font critical (Plus Jakarta Sans) -->
+    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" as="style" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'" />
+    
+    <!-- Fallback jika JS disabled -->
+    <noscript>
+      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" />
+    </noscript>
+    
     <title>HunianKita - Cari Kost, Guest House & Villa Terbaik di Indonesia</title>
     <meta name="description" content="Temukan kost, guest house, dan villa terbaik di seluruh Indonesia. Harga transparan, hubungi langsung pemilik via WhatsApp!" />
     <meta name="author" content="HunianKita" />
@@ -19,6 +37,9 @@
     <meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
     
     <link rel="canonical" href="https://huniankita.com" />
+    
+    <!-- Theme color untuk PWA -->
+    <meta name="theme-color" content="#0ea5e9" />
   </head>
 
   <body>
